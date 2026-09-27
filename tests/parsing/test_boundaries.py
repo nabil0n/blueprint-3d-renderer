@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask
+from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask, enclose_rooms
 from blueprint3d.parsing.geometry import PxWall
 from blueprint3d.parsing.rooms import find_rooms
 
@@ -135,3 +135,85 @@ def test_probe_does_not_see_through_walls():
     ink = wall_mask.copy()
     cv2.rectangle(ink, (280, 150), (318, 200), 255, 1)  # cupboard outline next to the east wall
     assert complete(ink, wall_mask).walls == ()
+
+
+def enclose(ink, walls, balconies=frozenset()):
+    regions = find_rooms(ink, min_area_px=2000, min_inradius_px=20)
+    return enclose_rooms(ink, list(walls), regions.contours, balconies, regions.outside, CONFIG)
+
+
+WEST = PxWall(start=(110, 100), end=(110, 299), thickness=20)
+NORTH = PxWall(start=(100, 110), end=(339, 110), thickness=20)
+SOUTH = PxWall(start=(100, 290), end=(339, 290), thickness=20)
+
+
+def test_a_drawn_wall_that_never_became_a_wall_is_closed():
+    """Thick strokes all round, but the parser only turned three sides into walls."""
+    ink, _ = box_with_open_east_side()
+    cv2.rectangle(ink, (320, 100), (339, 299), 255, -1)
+
+    [wall] = enclose(ink, [WEST, NORTH, SOUTH])
+
+    assert wall.exterior and not wall.openings and wall.height_cm is None
+    assert wall.thickness == 20
+    assert [wall.start[0], wall.end[0]] == pytest.approx([330, 330], abs=2)
+    assert sorted(y for _, y in (wall.start, wall.end)) == pytest.approx([120, 280], abs=6)
+
+
+def test_a_single_line_facing_outside_is_closed_too():
+    ink, _ = box_with_open_east_side()
+    cv2.line(ink, (339, 100), (339, 299), 255, 1)
+    [wall] = enclose(ink, [WEST, NORTH, SOUTH])
+    assert wall.exterior and not wall.openings
+
+
+def test_closing_glazing_keeps_the_window():
+    ink, _ = box_with_open_east_side()
+    for x in (330, 339, 348):
+        cv2.line(ink, (x, 100), (x, 299), 255, 1)
+    [wall] = enclose(ink, [WEST, NORTH, SOUTH])
+    assert [o.kind for o in wall.openings] == ["window"]
+
+
+def test_a_balcony_is_closed_with_a_railing():
+    ink, _ = box_with_open_east_side()
+    cv2.line(ink, (339, 100), (339, 299), 255, 1)
+    [wall] = enclose(ink, [WEST, NORTH, SOUTH], balconies=frozenset({0}))
+    assert wall.height_cm == 125 and wall.thickness == 4
+
+
+def test_rooms_already_enclosed_by_walls_get_nothing():
+    ink, _ = box_with_open_east_side()
+    cv2.rectangle(ink, (320, 100), (339, 299), 255, -1)
+    east = PxWall(start=(330, 100), end=(330, 299), thickness=20)
+    assert enclose(ink, [WEST, NORTH, SOUTH, east]) == ()
+
+
+def test_an_opening_between_two_rooms_is_not_closed():
+    """Open plans are real: only stretches facing outside must have walls."""
+    ink = np.zeros((400, 600), np.uint8)
+    cv2.rectangle(ink, (100, 100), (499, 299), 255, 20)
+    cv2.line(ink, (300, 110), (300, 290), 255, 1)  # thin divider, e.g. a floor change
+    walls = [
+        PxWall(start=(100, 110), end=(499, 110), thickness=20),
+        PxWall(start=(100, 290), end=(499, 290), thickness=20),
+        PxWall(start=(110, 100), end=(110, 299), thickness=20),
+        PxWall(start=(490, 100), end=(490, 299), thickness=20),
+    ]
+    assert enclose(ink, walls) == ()
+
+
+def test_a_closing_wall_fills_the_drawn_wall_from_the_room_outwards():
+    """A drawn wall 16 px deep: the new wall spans it, not the plan's thickest wall (20 px)."""
+    ink, _ = box_with_open_east_side()
+    cv2.rectangle(ink, (324, 100), (339, 299), 255, -1)
+    [wall] = enclose(ink, [WEST, NORTH, SOUTH])
+    assert wall.thickness == pytest.approx(16, abs=2)
+    assert wall.start[0] - wall.thickness / 2 == pytest.approx(324, abs=2)
+
+
+def test_a_single_line_gets_at_least_an_ordinary_wall_thickness():
+    ink, _ = box_with_open_east_side()
+    cv2.line(ink, (339, 100), (339, 299), 255, 1)
+    [wall] = enclose(ink, [WEST, NORTH, SOUTH])
+    assert wall.thickness == 12

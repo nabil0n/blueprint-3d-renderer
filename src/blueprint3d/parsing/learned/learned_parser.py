@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
-from blueprint3d.parsing.boundaries import complete_boundaries, covered_mask
+import cv2
+
+from blueprint3d.parsing.boundaries import complete_boundaries, covered_mask, enclose_rooms
 from blueprint3d.parsing.errors import ParseError
 from blueprint3d.parsing.image_io import MAX_SIDE_PX, decode_image
 from blueprint3d.parsing.learned.segmentation import DEFAULT_MODEL_DIR, CubiCasaModel, SegmentationModel
@@ -20,6 +22,7 @@ from blueprint3d.parsing.pipeline import (
     PlanArea,
     best_scale_bar,
     boundary_config,
+    enclosure_warnings,
     label_rooms_safely,
     locate_plan,
     parse_meta,
@@ -76,24 +79,29 @@ class LearnedParser:
 
         rooms = vectorize_rooms(seg, layout, scale.cm_per_px, ink=area.ink)
         # Outlines no wall explains (thin-line balconies, angled glazing): completed as in the OpenCV parser.
+        # Thick drawn strokes count as explained even where the model saw no wall, so a wall it
+        # missed is not taken for a balcony railing; enclose_rooms gives it a wall below.
+        config = boundary_config(layout.stats, scale.cm_per_px)
         completion = complete_boundaries(
             area.ink,
-            covered_mask(layout.barrier, list(layout.walls)),
+            covered_mask(cv2.bitwise_or(layout.barrier, area.wall_mask), list(layout.walls)),
             rooms.regions.contours,
             rooms.regions.outside_drawing,
-            boundary_config(layout.stats, scale.cm_per_px),
+            config,
         )
         balconies = rooms.balconies | completion.balconies
         outside = outside_space(rooms.regions, balconies)
         walls = [windows_facing_outside(mark_exterior(w, outside), outside) for w in layout.walls]
-        merged = merge_parallel_walls(
-            [*walls, *rooms.railings, *completion.walls], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px
+        all_walls = [*walls, *rooms.railings, *completion.walls]
+        closing = enclose_rooms(
+            area.ink, all_walls, rooms.regions.contours, balconies, rooms.regions.outside_drawing, config
         )
+        merged = merge_parallel_walls([*all_walls, *closing], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
         labels, naming_warning = label_rooms_safely(self.read_text, area.gray, rooms.regions.polygons)
         kinds, names = room_kinds_and_names(labels, guessed=rooms.kinds, balconies=balconies)
         plan = build_plan(merged, rooms.regions.polygons, scale.cm_per_px, kinds, names)
 
-        warnings = [*scale_warnings(scale, len(plan.rooms)), *naming_warning]
+        warnings = [*scale_warnings(scale, len(plan.rooms)), *enclosure_warnings(closing), *naming_warning]
         return ParseResult(plan=plan, meta=parse_meta(self.name, decoded, area, scale, cm_per_px, warnings))
 
 

@@ -263,6 +263,15 @@ known walls, so a cupboard drawn against a wall is never mistaken for one.
 | Outside, behind a single line (e.g. a door leaf drawn outside) | Nothing |
 | Another room, across thin lines | A **wall with a door** along the chord |
 
+Last, just before the plan is built, **every room must be closed towards the outside**. This
+check measures each outline against the walls the parser actually produced, not against wall
+pixels: a thick stroke that never became a wall (a hatched wall, an angled wall the segment pass
+could not trace, a wall the model missed) would otherwise leave a hole in the dollhouse. Any
+stretch that still faces outside gets a wall that fills whatever is drawn there, from the room
+face out to open space (a railing on balconies, a window where glazing is drawn). Stretches that
+face another room stay open, since open plans are real. The parse result warns when this
+happens.
+
 ### 9. Room names — [`ocr.py`](src/blueprint3d/parsing/ocr.py), [`room_names.py`](src/blueprint3d/parsing/room_names.py)
 
 Most plans print a name in each room: SOVRUM, KÖK, BAD, Hall. The plan area is read with
@@ -331,8 +340,9 @@ exterior walls, room names.
    the spaces enclosed by the walls, extended by one thickness at each end (the model often stops
    a wall just short of the wall it meets). Railings become low walls.
 3. **Complete and name**, as in the OpenCV parser: a second room pass over thin lines closes
-   balcony outlines the model missed, boundary completion adds railings and angled glazing, and
-   printed names decide the room kind. Without a printed name, the model's class does.
+   balcony outlines the model missed, boundary completion adds railings and angled glazing, the
+   closing check walls in any room still open to the outside (the model misses hatched and faint
+   walls), and printed names decide the room kind. Without a printed name, the model's class does.
 
 The model runs on this machine only: loaded by explicit path, never downloaded at runtime (a test
 checks this with the network blocked). Its code and weights are CC BY-NC 4.0 and the dataset

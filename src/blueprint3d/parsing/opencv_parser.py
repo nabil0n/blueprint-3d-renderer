@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from blueprint3d.parsing.boundaries import complete_boundaries, covered_mask
+from blueprint3d.parsing.boundaries import complete_boundaries, covered_mask, enclose_rooms
 from blueprint3d.parsing.errors import ParseError
 from blueprint3d.parsing.geometry import PxWall, WallRun
 from blueprint3d.parsing.image_io import MAX_SIDE_PX, decode_image
@@ -22,6 +22,7 @@ from blueprint3d.parsing.pipeline import (
     PlanArea,
     best_scale_bar,
     boundary_config,
+    enclosure_warnings,
     label_rooms_safely,
     locate_plan,
     parse_meta,
@@ -83,21 +84,22 @@ class OpenCvParser:
 
         regions = _find_rooms(area, runs, scale.cm_per_px)
         found_walls = [*axis_walls, *diagonal_walls]
+        config = boundary_config(stats, scale.cm_per_px)
         completion = complete_boundaries(
-            area.ink,
-            covered_mask(area.wall_mask, found_walls),
-            regions.contours,
-            regions.outside_drawing,
-            boundary_config(stats, scale.cm_per_px),
+            area.ink, covered_mask(area.wall_mask, found_walls), regions.contours, regions.outside_drawing, config
         )
         outside = outside_space(regions, completion.balconies)
         walls = [windows_facing_outside(mark_exterior(w, outside), outside) for w in found_walls]
         labels, naming_warning = label_rooms_safely(self.read_text, area.gray, regions.polygons)
         kinds, names = room_kinds_and_names(labels, balconies=completion.balconies)
-        merged = merge_parallel_walls([*walls, *completion.walls], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
+        all_walls = [*walls, *completion.walls]
+        closing = enclose_rooms(
+            area.ink, all_walls, regions.contours, completion.balconies, regions.outside_drawing, config
+        )
+        merged = merge_parallel_walls([*all_walls, *closing], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
         plan = build_plan(merged, regions.polygons, scale.cm_per_px, kinds, names)
 
-        warnings = [*scale_warnings(scale, len(plan.rooms)), *naming_warning]
+        warnings = [*scale_warnings(scale, len(plan.rooms)), *enclosure_warnings(closing), *naming_warning]
         meta = parse_meta(self.name, decoded, area, scale, cm_per_px, warnings)
         return ParseResult(plan=plan, meta=meta)
 

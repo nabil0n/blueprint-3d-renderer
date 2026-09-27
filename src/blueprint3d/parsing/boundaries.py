@@ -15,7 +15,7 @@ Probes stop at known walls, so furniture drawn against a wall is never mistaken 
 
 import math
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import cv2
 import numpy as np
@@ -121,6 +121,72 @@ def complete_boundaries(
                 if door is not None and (key not in doors or _length(door) > _length(doors[key])):
                     doors[key] = door
     return Completion(walls=(*walls, *doors.values()), balconies=frozenset(balconies))
+
+
+def enclose_rooms(
+    ink: np.ndarray,
+    walls: list[PxWall],
+    contours: tuple[np.ndarray, ...],
+    balconies: frozenset[int],
+    outside: np.ndarray,
+    config: BoundaryConfig,
+) -> tuple[PxWall, ...]:
+    """The last check before a plan is built: every stretch of room outline facing outside must
+    have a wall. Coverage is measured against `walls` only, not wall pixels: thick strokes that
+    never became a wall (a hatched wall the model missed, an angled wall the segment pass did not
+    trace) would otherwise leave the room open. Missing stretches get a railing on balconies, an
+    exterior wall elsewhere (with a window where glazing is drawn). Stretches facing another room
+    are left open: open plans are real."""
+    covered = covered_mask(np.zeros(outside.shape, np.uint8), walls)
+    labels = _room_labels(ink.shape, contours)
+    thick_ink = cv2.dilate(ink, np.ones((3, 3), np.uint8))
+    added = []
+    for index, contour in enumerate(contours):
+        for group in _neighbor_groups(index, contour, covered, labels, outside, config):
+            if group[0].neighbor != OUTSIDE:
+                continue
+            for piece in group:
+                if index in balconies:
+                    wall = _railing(piece, thick_ink, config)
+                else:
+                    wall = _window_wall(piece, thick_ink, config) or _solid_wall(piece, config)
+                    if wall is not None:
+                        wall = _fit_to_drawing(wall, piece, outside, config)
+                if wall is not None:
+                    added.append(wall)
+    return tuple(added)
+
+
+def _solid_wall(piece: _Piece, config: BoundaryConfig) -> PxWall | None:
+    """A plain exterior wall; `_fit_to_drawing` places it."""
+    if piece.length < config.min_piece:
+        return None
+    return PxWall(start=tuple(piece.start), end=tuple(piece.end), thickness=config.wall_thickness, exterior=True)
+
+
+def _fit_to_drawing(wall: PxWall, piece: _Piece, outside: np.ndarray, config: BoundaryConfig) -> PxWall:
+    """The wall fills what is drawn between the room and the outside (an outlined or hatched wall,
+    or a single line), within the plan's usual wall thicknesses, from the room's face outwards."""
+    depth = _depth_to_outside(piece, outside, config.probe_reach)
+    low, high = sorted((config.door_wall_thickness, config.wall_thickness))
+    thickness = float(np.clip(depth, low, high)) if depth is not None else config.wall_thickness
+    shift = piece.outward * thickness / 2
+    return replace(wall, start=tuple(piece.start + shift), end=tuple(piece.end + shift), thickness=thickness)
+
+
+def _depth_to_outside(piece: _Piece, outside: np.ndarray, reach: float) -> float | None:
+    """Median distance from the piece to open outside space."""
+    height, width = outside.shape
+    samples = max(1, int(piece.length // PROBE_SPACING_PX))
+    depths = []
+    for k in range(samples):
+        origin = piece.start + (piece.end - piece.start) * (k + 0.5) / samples
+        for step in range(1, int(reach) + 1):
+            x, y = (round(v) for v in origin + piece.outward * step)
+            if not (0 <= x < width and 0 <= y < height) or outside[y, x]:
+                depths.append(step)
+                break
+    return float(np.median(depths)) if depths else None
 
 
 def _length(wall: PxWall) -> float:

@@ -49,6 +49,10 @@ def test_estimates_the_scale_from_its_doors(result):
     assert result.meta.cm_per_px == pytest.approx(DOOR_WIDTH_CM / DOOR_PX, rel=0.1)
 
 
+def test_a_plan_whose_rooms_are_all_walled_in_gets_no_closing_warning(result):
+    assert not any("facing outside" in w for w in result.meta.warnings)
+
+
 def test_marks_the_outer_walls_exterior(result):
     exterior = [w for w in result.plan.walls if w.exterior]
     assert len(exterior) == 4
@@ -88,3 +92,27 @@ def test_real_plans_with_the_real_model(path):
     assert any(o.kind == "door" for o in result.plan.openings)
     assert any(o.kind == "window" for o in result.plan.openings)
     assert 0.5 < result.meta.cm_per_px < 5
+
+
+class MissesTheEastWall(ThickStrokesAreWalls):
+    """Like the real model on hatched or faint walls: a drawn exterior wall it does not see."""
+
+    def segment(self, image: np.ndarray, scale: float = 1.0) -> Segmentation:
+        seg = super().segment(image, scale)
+        rooms = seg.rooms.copy()
+        height, width = rooms.shape
+        rooms[round(0.06 * height) : round(0.94 * height), round(0.9 * width) :] = 0
+        return Segmentation(rooms, seg.icons, seg.room_classes, seg.icon_classes)
+
+
+def test_every_room_is_closed_towards_the_outside_even_where_the_model_misses_a_wall():
+    result = LearnedParser(model=MissesTheEastWall()).parse(encode_png(draw_two_room_plan()))
+    plan = result.plan
+    assert any("facing outside" in w for w in result.meta.warnings)
+    east_x = max(p.x for r in plan.rooms for p in r.polygon)
+    assert "balcony" not in [r.kind for r in plan.rooms], "a thick drawn wall is no balcony railing"
+    east_walls = [w for w in plan.walls if w.exterior and w.height == 250 and min(w.start.x, w.end.x) >= east_x - 5]
+    assert east_walls, "the east side of the bedroom faces outside with no wall"
+    span = sum(abs(w.end.y - w.start.y) for w in east_walls)
+    bedroom_height = max(p.y for p in plan.rooms[0].polygon) - min(p.y for p in plan.rooms[0].polygon)
+    assert span >= 0.9 * bedroom_height

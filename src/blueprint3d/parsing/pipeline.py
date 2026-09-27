@@ -7,7 +7,7 @@ from typing import Protocol
 import numpy as np
 
 from blueprint3d.parsing.boundaries import BoundaryConfig
-from blueprint3d.parsing.geometry import PxPoint
+from blueprint3d.parsing.geometry import PxPoint, PxWall
 from blueprint3d.parsing.image_io import DecodedImage, binarize, line_ink
 from blueprint3d.parsing.ocr import TextReader
 from blueprint3d.parsing.result import ParseMeta, ParseResult
@@ -147,6 +147,17 @@ def boundary_config(stats: ThicknessStats, cm_per_px: float) -> BoundaryConfig:
         door_range=(MIN_DOOR_CM / cm_per_px, MAX_DOOR_CM / cm_per_px),
         probe_reach=PROBE_REACH_FACTOR * stats.maximum,
     )
+
+
+def enclosure_warnings(closing: tuple[PxWall, ...]) -> list[str]:
+    """Walls added where a room faced outside with nothing in between: the drawing shows a wall
+    there that was not recognised, so its windows may be missing."""
+    if not closing:
+        return []
+    return [
+        f"Closed {len(closing)} stretch(es) of room outline facing outside with plain walls; "
+        "windows there may be missing."
+    ]
 
 
 def scale_warnings(scale: ScaleEstimate, room_count: int) -> list[str]:
