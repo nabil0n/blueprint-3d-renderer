@@ -21,6 +21,10 @@ export interface PlanSource {
   readonly meta: ParseMeta | null
   readonly busy: boolean
   readonly error: string | null
+  /** The chosen backend parser; null means the backend's default. */
+  readonly parser: string | null
+  /** Picks a parser; an uploaded image is parsed again with it. */
+  readonly chooseParser: (name: string) => void
   readonly uploadImage: (file: File) => void
   readonly reparse: (cmPerPx: number) => void
   readonly loadJson: (file: File) => void
@@ -32,6 +36,7 @@ export function usePlanSource(initial: LoadedPlan): PlanSource {
   const [meta, setMeta] = useState<ParseMeta | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [parser, setParser] = useState<string | null>(null)
   const inFlight = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -62,9 +67,11 @@ export function usePlanSource(initial: LoadedPlan): PlanSource {
     }
   }
 
+  const withParser = (name: string | null) => (name === null ? {} : { parser: name })
+
   const uploadImage = (file: File) =>
     void run(async (signal) => {
-      const result = await parseFloorPlan(file, { signal })
+      const result = await parseFloorPlan(file, { signal, ...withParser(parser) })
       setImage({ file, url: URL.createObjectURL(file) })
       setMeta(result.meta)
       show(result.plan, file.name)
@@ -73,7 +80,18 @@ export function usePlanSource(initial: LoadedPlan): PlanSource {
   const reparse = (cmPerPx: number) => {
     if (!image) return
     void run(async (signal) => {
-      const result = await parseFloorPlan(image.file, { cmPerPx, signal })
+      const result = await parseFloorPlan(image.file, { cmPerPx, signal, ...withParser(parser) })
+      setMeta(result.meta)
+      show(result.plan, image.file.name)
+    })
+  }
+
+  const chooseParser = (name: string) => {
+    setParser(name)
+    if (!image) return
+    // Each parser estimates the scale its own way, so the new parse starts without an override.
+    void run(async (signal) => {
+      const result = await parseFloorPlan(image.file, { signal, parser: name })
       setMeta(result.meta)
       show(result.plan, image.file.name)
     })
@@ -87,5 +105,5 @@ export function usePlanSource(initial: LoadedPlan): PlanSource {
       show(plan, file.name)
     })
 
-  return { loaded, image, meta, busy, error, uploadImage, reparse, loadJson }
+  return { loaded, image, meta, busy, error, parser, chooseParser, uploadImage, reparse, loadJson }
 }

@@ -282,3 +282,18 @@ body,
     width: auto;
   }
 }
+
+.parser-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.parser-picker select {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}

@@ -28,6 +28,8 @@ export interface ParsedFloorPlan {
 interface ParseOptions {
   /** Known scale in centimetres per pixel of the uploaded image; estimated by the backend if omitted. */
   readonly cmPerPx?: number
+  /** Which backend parser to use (see GET /api/parsers); the backend's default if omitted. */
+  readonly parser?: string
   readonly signal?: AbortSignal
 }
 
@@ -49,6 +51,7 @@ export async function parseFloorPlan(file: File, options: ParseOptions = {}): Pr
   const body = new FormData()
   body.append('file', file)
   if (options.cmPerPx !== undefined) body.append('cm_per_px', String(options.cmPerPx))
+  if (options.parser !== undefined) body.append('parser', options.parser)
 
   const response = await post(body, options.signal)
   if (!response.ok) throw new Error(await errorMessage(response))

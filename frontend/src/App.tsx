@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import sample from '../../tests/fixtures/two_room_apartment.json'
 import { useBackendStatus } from './api/useBackendStatus'
+import { useParsers } from './api/useParsers'
 import { usePlanSource, type LoadedPlan } from './app/usePlanSource'
 import { DEFAULTS, parsePlan, type Plan } from './plan/schema'
 import { Dollhouse } from './scene/Dollhouse'
@@ -17,6 +18,7 @@ export default function App() {
   const [cut, setCut] = useState<{ version: number; value: number } | null>(null)
   const [showLabels, setShowLabels] = useState(true)
   const backendStatus = useBackendStatus()
+  const parsers = useParsers()
 
   const maxHeight = maxWallHeight(loaded.plan)
   const cutHeight = cut?.version === loaded.version ? cut.value : maxHeight
@@ -27,6 +29,7 @@ export default function App() {
       <ControlPanel
         source={source}
         backendStatus={backendStatus}
+        parsers={parsers}
         view={{
           cutHeight,
           maxHeight,

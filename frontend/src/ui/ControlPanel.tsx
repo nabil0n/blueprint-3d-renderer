@@ -1,7 +1,9 @@
 import type { ComponentProps } from 'react'
 import type { BackendStatus } from '../api/useBackendStatus'
+import type { ParserOption } from '../api/useParsers'
 import type { PlanSource } from '../app/usePlanSource'
 import { ImageSummary } from './ImageSummary'
+import { ParserPicker } from './ParserPicker'
 import { SourcePicker } from './SourcePicker'
 import { ViewControls } from './ViewControls'
 
@@ -9,6 +11,7 @@ interface ControlPanelProps {
   readonly source: PlanSource
   readonly view: ComponentProps<typeof ViewControls>
   readonly backendStatus: BackendStatus
+  readonly parsers: readonly ParserOption[]
 }
 
 const STATUS_TEXT: Record<BackendStatus, string> = {
@@ -17,7 +20,7 @@ const STATUS_TEXT: Record<BackendStatus, string> = {
   offline: 'Backend offline',
 }
 
-export function ControlPanel({ source, view, backendStatus }: ControlPanelProps) {
+export function ControlPanel({ source, view, backendStatus, parsers }: ControlPanelProps) {
   return (
     <aside className="panel">
       <header>
@@ -26,6 +29,8 @@ export function ControlPanel({ source, view, backendStatus }: ControlPanelProps)
           {source.loaded.source}
         </p>
       </header>
+
+      <ParserPicker options={parsers} selected={source.parser} busy={source.busy} onChange={source.chooseParser} />
 
       <SourcePicker
         busy={source.busy}

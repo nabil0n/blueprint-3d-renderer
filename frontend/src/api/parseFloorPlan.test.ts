@@ -52,6 +52,12 @@ describe('parseFloorPlan', () => {
     expect((init.body as FormData).has('cm_per_px')).toBe(false)
   })
 
+  it('sends the chosen parser when given', async () => {
+    const fetchMock = mockFetch(Response.json({ plan: sample, meta: { ...meta, parser: 'cubicasa' } }))
+    await parseFloorPlan(png(), { parser: 'cubicasa' })
+    expect((fetchMock.mock.calls[0][1].body as FormData).get('parser')).toBe('cubicasa')
+  })
+
   it('sends a scale override when given', async () => {
     const fetchMock = mockFetch(Response.json({ plan: sample, meta: { ...meta, cm_per_px: 2, scale_source: 'user' } }))
     await parseFloorPlan(png(), { cmPerPx: 2 })

@@ -114,4 +114,23 @@ describe('usePlanSource', () => {
     expect(result.current.error).toBeNull()
     expect(result.current.loaded.version).toBe(1)
   })
+
+  it('parses with the chosen parser, and re-parses the image when the choice changes', async () => {
+    const parse = vi.spyOn(api, 'parseFloorPlan').mockResolvedValue({ plan: parsePlan(sample), meta })
+    const { result } = renderHook(() => usePlanSource(INITIAL))
+
+    act(() => result.current.chooseParser('cubicasa'))
+    expect(result.current.parser).toBe('cubicasa')
+    expect(parse).not.toHaveBeenCalled()
+
+    act(() => result.current.uploadImage(png))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+    expect(parse.mock.calls[0][1]).toMatchObject({ parser: 'cubicasa' })
+
+    act(() => result.current.chooseParser('opencv'))
+    await waitFor(() => expect(parse).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+    expect(parse.mock.calls[1][1]).toMatchObject({ parser: 'opencv' })
+    expect(parse.mock.calls[1][1]).not.toHaveProperty('cmPerPx')
+  })
 })
