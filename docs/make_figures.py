@@ -20,6 +20,7 @@ from blueprint3d.evaluation.overlay import draw_overlay  # noqa: E402
 from blueprint3d.parsing import opencv_parser as op  # noqa: E402
 from blueprint3d.parsing.image_io import binarize, decode_image  # noqa: E402
 from blueprint3d.parsing.openings import classify_gap, merge_collinear  # noqa: E402
+from blueprint3d.parsing.pipeline import locate_plan  # noqa: E402
 from blueprint3d.parsing.rooms import find_rooms, gap_rects  # noqa: E402
 from blueprint3d.parsing.segments import extract_axis_segments  # noqa: E402
 from blueprint3d.parsing.walls import thickness_stats  # noqa: E402
@@ -70,7 +71,7 @@ def main() -> None:
     save("1-input.png", page)
 
     decoded = decode_image(encode_png(page))
-    area = op._locate_plan(decoded.gray)
+    area = locate_plan(decoded.gray)
     x0, y0, x1, y1 = area.box
 
     # 2. Ink: colour removed, dark ink black, light-gray lines gray, plan area outlined.
