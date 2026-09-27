@@ -2,12 +2,16 @@
 
 from dataclasses import dataclass
 
+import cv2
+import numpy as np
+
 from blueprint3d.evaluation.truth import SampleTruth
 from blueprint3d.parsing.result import ParseResult
 from blueprint3d.schema import Plan
 
 SCALE_TOLERANCE = 0.05
 AREA_TOLERANCE = 0.10
+AREA_RASTER_CM = 2.0
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,26 @@ class SampleScore:
 
 
 def living_area_m2(plan: Plan) -> float:
-    return sum(room.area for room in plan.rooms if room.kind != "balcony") / 10_000
+    """Living area as printed on Swedish plans (BOA, SS 21054): the floor inside the exterior walls,
+    interior walls included, balconies excluded. Rooms are rasterised and the gaps between them
+    closed up to the thickest interior wall."""
+    rooms = [room for room in plan.rooms if room.kind != "balcony"]
+    if not rooms:
+        return 0.0
+    interior = [w.thickness for w in plan.walls if not w.exterior]
+    close_px = int(np.ceil(max(interior) / AREA_RASTER_CM)) + 2 if interior else 0
+    # Pad beyond the closing kernel: erosion treats pixels outside the image as filled.
+    pad_cm = (close_px + 2) * AREA_RASTER_CM
+    points = np.array([(p.x, p.y) for room in rooms for p in room.polygon])
+    origin = points.min(axis=0) - pad_cm
+    width, height = np.ceil((points.max(axis=0) + pad_cm - origin) / AREA_RASTER_CM).astype(int)
+    mask = np.zeros((height, width), np.uint8)
+    for room in rooms:
+        polygon = (np.array([(p.x, p.y) for p in room.polygon]) - origin) / AREA_RASTER_CM
+        cv2.fillPoly(mask, [np.round(polygon).astype(np.int32)], 1)
+    if close_px:
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((close_px, close_px), np.uint8))
+    return float(mask.sum()) * AREA_RASTER_CM**2 / 10_000
 
 
 def score(name: str, result: ParseResult, truth: SampleTruth | None) -> SampleScore:
