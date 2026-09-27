@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from blueprint3d import api
 from blueprint3d.api import app
+from tests.parsing.learned.toy_model import write_toy_model
 from tests.parsing.synthetic import blank, draw_two_room_plan, encode_png
 
 client = TestClient(app)
@@ -74,3 +75,34 @@ def test_validate_plan_rejects_invalid_plan():
     )
     assert response.status_code == 422
     assert "unknown wall" in response.text
+
+
+def test_parsers_lists_each_parser_with_its_availability(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "MODEL_DIR", tmp_path)
+    body = client.get("/api/parsers").json()
+    assert [(p["name"], p["available"], p["default"]) for p in body] == [
+        ("opencv", True, True),
+        ("cubicasa", False, False),
+    ]
+    assert "setup_cubicasa" in body[1]["description"]
+
+
+def test_parse_with_the_learned_parser_once_its_model_is_there(monkeypatch, tmp_path):
+    write_toy_model(tmp_path)
+    monkeypatch.setattr(api, "MODEL_DIR", tmp_path)
+    response = upload(encode_png(draw_two_room_plan()), parser="cubicasa")
+    assert response.status_code == 200
+    assert response.json()["meta"]["parser"] == "cubicasa"
+
+
+def test_parse_refuses_an_unavailable_parser(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "MODEL_DIR", tmp_path)
+    response = upload(encode_png(draw_two_room_plan()), parser="cubicasa")
+    assert response.status_code == 422
+    assert "not available" in response.json()["detail"]
+
+
+def test_parse_refuses_an_unknown_parser():
+    response = upload(encode_png(draw_two_room_plan()), parser="magic")
+    assert response.status_code == 422
+    assert "Unknown parser" in response.json()["detail"]
