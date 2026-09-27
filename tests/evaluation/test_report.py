@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from blueprint3d.evaluation.report import evaluate_directory, format_table
 from blueprint3d.evaluation.truth import load_truth
+from tests.parsing.learned.toy_model import write_toy_model
 from tests.parsing.synthetic import TRUE_CM_PER_PX, blank, draw_two_room_plan, encode_png
 
 
@@ -62,3 +63,25 @@ def test_cli_exits_non_zero_when_a_sample_fails(samples, tmp_path, capsys):
 
     assert main([str(samples), "--out", str(tmp_path / "out")]) == 1
     assert "1/2 passed" in capsys.readouterr().out
+    assert (tmp_path / "out" / "opencv" / "overview.png").is_file(), "each parser writes to its own folder"
+
+
+def test_cli_compares_parsers_side_by_side(samples, tmp_path, capsys):
+    from blueprint3d.evaluation.__main__ import main
+
+    models = tmp_path / "models"
+    models.mkdir()
+    write_toy_model(models)
+    main([str(samples), "--out", str(tmp_path / "out"), "--parser", "all", "--model-dir", str(models)])
+    output = capsys.readouterr().out
+    assert (tmp_path / "out" / "opencv" / "report.json").is_file()
+    assert (tmp_path / "out" / "cubicasa" / "report.json").is_file()
+    assert "opencv" in output and "cubicasa" in output
+    assert "två rum.png" in output
+
+
+def test_cli_refuses_a_parser_whose_model_is_missing(samples, tmp_path):
+    from blueprint3d.evaluation.__main__ import main
+
+    with pytest.raises(SystemExit):
+        main([str(samples), "--parser", "cubicasa", "--model-dir", str(tmp_path / "no-model")])

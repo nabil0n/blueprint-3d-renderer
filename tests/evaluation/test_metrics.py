@@ -76,7 +76,8 @@ def named(room: Room, name: str) -> Room:
 
 
 def test_counts_printed_room_names_that_were_read():
-    truth = SampleTruth(cm_per_px=1.5, rooms=3, balconies=1, room_names=["Sovrum", "Sovrum", "Kök", "Balkong"])
+    names = ["Sovrum", "Sovrum", "Kök", "Balkong"]
+    truth = SampleTruth(cm_per_px=1.5, rooms=3, balconies=1, room_names=names)
     rooms = [named(ROOMS[0], "SOVRUM"), named(ROOMS[1], "Kök / Sovrum / Entré"), ROOMS[2]]
     s = score("a", result(rooms), truth)
     assert (s.names_found, s.names_expected) == (3, 4)
@@ -97,3 +98,19 @@ def test_room_names_do_not_decide_pass_or_fail():
 def test_names_are_not_judged_without_listed_names():
     s = score("a", result(ROOMS), SampleTruth(cm_per_px=1.5, rooms=3, balconies=1))
     assert s.names_expected is None
+
+
+def test_counts_room_kinds_against_the_printed_names():
+    names = ["Sovrum", "Kök", "Balkong", "Matrum"]
+    truth = SampleTruth(cm_per_px=1.5, rooms=3, balconies=1, room_names=names)
+    bedroom = ROOMS[0].model_copy(update={"kind": "bedroom"})
+    bathroom = ROOMS[1].model_copy(update={"kind": "bathroom"})
+    rooms = [bedroom, bathroom, ROOMS[2]]
+    s = score("a", result(rooms), truth)
+    assert (s.kinds_found, s.kinds_expected) == (2, 3), "bedroom and balcony; 'Matrum' has no kind to find"
+
+
+def test_an_abbreviated_printed_name_matches_its_spelled_out_form():
+    truth = SampleTruth(cm_per_px=1.5, rooms=3, balconies=1, room_names=["Sovr.", "Vard.rum"])
+    rooms = [named(ROOMS[0], "Sovrum"), named(ROOMS[1], "Vardagsrum"), ROOMS[2]]
+    assert score("a", result(rooms), truth).names_found == 2

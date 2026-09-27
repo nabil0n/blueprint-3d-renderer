@@ -8,6 +8,7 @@ import numpy as np
 
 from blueprint3d.evaluation.truth import SampleTruth
 from blueprint3d.parsing.result import ParseResult
+from blueprint3d.parsing.room_names import match_label
 from blueprint3d.schema import Plan
 
 SCALE_TOLERANCE = 0.05
@@ -32,6 +33,9 @@ class SampleScore:
     names_found: int = 0
     names_expected: int | None = None
     """Printed room names read correctly; reported, but not part of pass/fail."""
+    kinds_found: int = 0
+    kinds_expected: int | None = None
+    """Room kinds (bedroom, kitchen ...) that the printed names imply; reported only."""
 
     @property
     def passed(self) -> bool | None:
@@ -75,14 +79,29 @@ def living_area_m2(plan: Plan) -> float:
 def names_found(plan: Plan, expected: list[str]) -> int:
     """How many of the expected names (with repeats) appear among the rooms' names. An open-plan
     room named "Kök / Entré" counts for both."""
-    read = [part.strip().lower() for room in plan.rooms if room.name for part in room.name.split(" / ")]
+    read = [_spelled_out(part) for room in plan.rooms if room.name for part in room.name.split(" / ")]
     remaining = Counter(read)
     found = 0
-    for name in expected:
-        if remaining[name.lower()] > 0:
-            remaining[name.lower()] -= 1
+    for name in map(_spelled_out, expected):
+        if remaining[name] > 0:
+            remaining[name] -= 1
             found += 1
     return found
+
+
+def _spelled_out(name: str) -> str:
+    """Comparable form of a room name: "Sovr." and "SOVRUM" both become "sovrum"."""
+    label = match_label(name)
+    return (label.name if label is not None else name).strip().lower()
+
+
+def kinds_found(plan: Plan, expected_names: list[str]) -> tuple[int, int]:
+    """(found, expected): the kinds implied by the printed names ("Sovrum" -> bedroom) that the plan's
+    rooms have, with repeats. Names without a kind (e.g. "Matrum") are not counted."""
+    labels = (match_label(name) for name in expected_names)
+    expected = Counter(label.kind for label in labels if label is not None and label.kind != "other")
+    found = Counter(room.kind for room in plan.rooms)
+    return sum(min(found[kind], count) for kind, count in expected.items()), sum(expected.values())
 
 
 def score(name: str, result: ParseResult, truth: SampleTruth | None) -> SampleScore:
@@ -100,6 +119,7 @@ def score(name: str, result: ParseResult, truth: SampleTruth | None) -> SampleSc
             balconies_expected=None,
             scale_source=result.meta.scale_source,
         )
+    kinds = kinds_found(plan, truth.room_names)
     return SampleScore(
         name=name,
         scale_error=result.meta.cm_per_px / truth.cm_per_px - 1,
@@ -112,6 +132,8 @@ def score(name: str, result: ParseResult, truth: SampleTruth | None) -> SampleSc
         scale_source=result.meta.scale_source,
         names_found=names_found(plan, truth.room_names),
         names_expected=len(truth.room_names) or None,
+        kinds_found=kinds[0],
+        kinds_expected=kinds[1] or None,
     )
 
 
