@@ -18,10 +18,11 @@ one stage at a time, and points to the code for each stage.
 1. [Quick start](#quick-start)
 2. [The big picture](#the-big-picture)
 3. [The parser, step by step](#the-parser-step-by-step)
-4. [From plan to 3D](#from-plan-to-3d)
-5. [Measuring progress](#measuring-progress)
-6. [Project layout and development](#project-layout-and-development)
-7. [Limitations and roadmap](#limitations-and-roadmap)
+4. [The learned parser](#the-learned-parser)
+5. [From plan to 3D](#from-plan-to-3d)
+6. [Measuring progress](#measuring-progress)
+7. [Project layout and development](#project-layout-and-development)
+8. [Limitations and roadmap](#limitations-and-roadmap)
 
 ---
 
@@ -45,6 +46,16 @@ uv run uvicorn blueprint3d.api:app --reload      # backend on :8000
 cd frontend
 npm install
 npm run dev                                      # frontend on :5173, proxies /api to :8000
+```
+
+Optional: the [learned parser](#the-learned-parser) needs a one-time setup (about 3 GB of PyTorch,
+used only for the export, plus a 209 MB download of CubiCasa's weights). After it, the backend
+offers a second parser, chosen in the control panel:
+
+```bash
+uv sync --group ml
+uv run --group ml python scripts/setup_cubicasa.py        # their code (vendor/) and weights (models/)
+uv run --group ml python scripts/export_cubicasa_onnx.py  # models/cubicasa5k.onnx, all the backend needs
 ```
 
 ---
@@ -93,7 +104,7 @@ A rental floor plan is a surprisingly hostile image. Besides walls it has room n
 door swings, dimension marks, logos, coloured fills, scale bars and site maps. The parser's job is
 to decide, pixel by pixel and then shape by shape, what is architecture and what is decoration.
 
-It does this in ten steps, orchestrated by
+The OpenCV parser does this in ten steps, orchestrated by
 [`parsing/opencv_parser.py`](src/blueprint3d/parsing/opencv_parser.py). Each step lives in its
 own small module. The figures below show every step on a synthetic example plan: two rooms, a
 cut-off corner with a window (a "bay"), a balcony, a coloured logo and a scale bar.
@@ -158,11 +169,13 @@ width), which letters never do.
 **Where is the plan?** A plan page also has titles, legends, site maps and scale bars.
 The parser clusters the wall pixels. It starts from the biggest cluster that contains a long
 straight run (12× the wall thickness; bold headings never have one) and adds nearby clusters
-of substantial size, then grows the box to include thin drawings *physically connected* to the
-walls, such as the balcony outline. Then it recomputes the wall threshold using only the strokes
+of substantial size. The group must hold long runs both horizontally and vertically, since a
+plan's walls run both ways; if not, the next cluster is tried. Bar-shaped clusters (a thick
+scale bar, a black scan border) never take part. Then the box grows to include thin drawings
+*physically connected* to the walls, such as the balcony outline. Then it recomputes the wall threshold using only the strokes
 inside the box, because page headings would otherwise skew the histogram.
 
-If no cluster has a long run, the walls are probably *hatched*: two thin lines with a stippled
+If no group qualifies, the walls are probably *hatched* or thin outlines: two thin lines with a stippled
 fill, which never forms a solid stroke. The plan is then the largest connected drawing on the
 page, and a small closing (about 10 cm) fuses the stipple into solid walls before the usual
 threshold runs.
@@ -296,6 +309,36 @@ Here is the finished plan drawn back onto the input:
 
 ---
 
+## The learned parser
+
+A second parser, in [`parsing/learned/`](src/blueprint3d/parsing/learned), replaces the
+hand-tuned wall and opening detection with a neural network:
+[CubiCasa5K](https://github.com/CubiCasa/CubiCasa5k)'s pretrained model, trained on 5,000 Finnish
+floor plans. It labels every pixel with a room class (wall, railing, kitchen, bedroom, bath,
+outdoor, …) and an icon class (door, window, …). Everything around it is this project's own, and
+shared with the OpenCV parser: finding the plan on the page, scale, rooms, balcony completion,
+exterior walls, room names.
+
+1. **Run the model** ([`segmentation.py`](src/blueprint3d/parsing/learned/segmentation.py)). It is
+   exported once to ONNX and runs with onnxruntime on the CPU in about a second, so the backend
+   needs no PyTorch. The plan is scaled so its walls are about 10 px thick, the thickness the
+   model handles best (swept on the evaluation). Averaging over four rotations is available but
+   off: it gained one room in 38 at four times the time.
+2. **Vectorise** ([`vectorize.py`](src/blueprint3d/parsing/learned/vectorize.py)). The model marks
+   doors and windows *in* the wall, where the wall class is interrupted. So walls are traced
+   through their openings (wall and icon pixels as one stroke), and the icon stretches along a
+   wall become its openings, of the model's kind. A gap with no icon is an open passage. Rooms are
+   the spaces enclosed by the walls, extended by one thickness at each end (the model often stops
+   a wall just short of the wall it meets). Railings become low walls.
+3. **Complete and name**, as in the OpenCV parser: a second room pass over thin lines closes
+   balcony outlines the model missed, boundary completion adds railings and angled glazing, and
+   printed names decide the room kind. Without a printed name, the model's class does.
+
+The model runs on this machine only: loaded by explicit path, never downloaded at runtime (a test
+checks this with the network blocked). Its code and weights are CC BY-NC 4.0 and the dataset
+CC BY-NC-SA 4.0: fine for this non-commercial project, but none of it is committed. The setup
+script fetches it into git-ignored folders.
+
 ## From plan to 3D
 
 The frontend ([`frontend/src`](frontend/src)) receives the plan and builds the scene.
@@ -324,27 +367,37 @@ Heuristics that fix one plan can quietly break another, so every parser change i
 against real plans:
 
 ```bash
-uv run python -m blueprint3d.evaluation        # parses every image in data/
+uv run python -m blueprint3d.evaluation                  # the OpenCV parser on every image in data/
+uv run python -m blueprint3d.evaluation --parser all     # every available parser, side by side
 ```
 
 Each plan in `data/` is scored against `data/truth.json`. That file holds only facts readable
 off the drawing: the true scale (from its scale bar), the printed living area, the number of
-rooms and balconies, and the room names printed on it. Names are reported but don't decide pass
-or fail. The harness prints a table and writes `eval-out/overview.png`: every plan
-with its overlay and scores, side by side.
+rooms and balconies, and the room names printed on it. Names, and the room kinds they imply, are
+reported but don't decide pass or fail. The harness prints a table and writes
+`eval-out/<parser>/overview.png`: every plan with its overlay and scores, side by side.
 
 Living area is measured the way Swedish plans print it (BOA, SS 21054): inside the exterior
 walls, *including* interior walls, excluding balconies.
 
-Results at the time of writing, on five real Swedish rental plans:
+Results at the time of writing, on eight real Swedish rental plans (scale error, area error,
+rooms found). The OpenCV parser was tuned on the first five; the last three were added later,
+unseen by both parsers:
 
-| Plan style | Scale error | Area error | Rooms | Names | Result |
-|---|---|---|---|---|---|
-| Modern export, colour, logo, thick walls | 0.0% | −10.0% | 7/7 | 7/7 | pass (at the edge) |
-| Clean vector plan with a bay window | −0.1% | −1.9% | 7/7 | 7/7 | pass |
-| Scanned, solid walls, open-plan kitchen | +0.3% | −0.2% | 5/6 | 7/7 | pass |
-| Scanned, outlined walls, hand lettering | +0.1% | (not printed) | 7/8 | 4/5 | pass |
-| Scanned, hatched walls | −0.1% | (not printed) | 5/10 | 6/7 | fail: rooms merge through unplugged doors |
+| Plan style | OpenCV | Learned (CubiCasa) |
+|---|---|---|
+| Modern export, colour, logo, thick walls | 0.0%, −10.0%, 7/7: **pass** | 0.0%, −13.6%, 6/7: fail |
+| Clean vector plan with a bay window | −0.1%, −1.9%, 7/7: **pass** | −0.1%, −2.8%, 7/7: **pass** |
+| Scanned, solid walls, open-plan kitchen | +0.3%, −0.2%, 5/6: **pass** | +0.3%, +0.8%, 5/6: **pass** |
+| Scanned, outlined walls, hand lettering | +0.1%, –, 7/8: **pass** | +0.1%, –, 6/8: fail |
+| Scanned, hatched walls | −0.1%, –, 5/10: fail | −0.1%, –, 9/10: **pass** |
+| Angled building, outlined walls | +0.4%, −40.0%, 6/8: fail | +0.4%, −5.6%, 8/8: fail (extra balcony) |
+| Solid walls, rooms labelled by area | +0.8%, +3.8%, 5/8: fail (no windows) | +0.8%, −5.7%, 5/8: fail |
+| Solid walls, site map under the plan | −49.9%, −80.9%, 4/8: fail | +0.7%, −4.9%, 5/8: fail |
+
+The learned parser generalises better: on the three unseen plans its areas are within 6%, where
+the OpenCV parser is off by up to 81%. It still merges some small rooms (a closet with the bath,
+a hall with the kitchen).
 
 The plans themselves are not in the repository: they are git-ignored, since real listings may
 be copyrighted. The figures in this README come from synthetic plans drawn by
@@ -357,8 +410,8 @@ be copyrighted. The figures in this README come from synthetic plans drawn by
 ```
 src/blueprint3d/
   schema.py            the plan format (source of truth)
-  api.py               FastAPI: /api/health, /api/plans/validate, /api/plans/parse
-  parsing/             image -> plan (one module per step above)
+  api.py               FastAPI: /api/health, /api/parsers, /api/plans/validate, /api/plans/parse
+  parsing/             image -> plan (one module per step above; learned/ for the model parser)
   evaluation/          scoring against real plans
 frontend/src/
   plan/                zod mirror of the schema
@@ -367,7 +420,9 @@ frontend/src/
   api/, app/, ui/      backend calls, state, control panel
 tests/                 pytest; tests/parsing/synthetic.py draws test plans
 docs/                  README figures (uv run python docs/make_figures.py)
-docker/, compose.yaml  development stack with hot reload
+scripts/               one-time setup and ONNX export of the learned model (uv run --group ml ...)
+models/, vendor/       exported model, CubiCasa's code and weights (git-ignored, from scripts/)
+docker/, compose.yaml  development stack with hot reload (models/ is mounted read-only)
 ```
 
 ```bash
@@ -384,8 +439,10 @@ Contributor and AI-agent conventions are in [CLAUDE.md](CLAUDE.md).
 
 **Not handled yet:**
 
-- **Hatched walls** (stippled fill between two lines) are found, but thin partitions and
-  their doors are not closed, so neighbouring rooms merge.
+- **Hatched walls** (stippled fill between two lines) are found, but the OpenCV parser doesn't
+  close thin partitions and their doors, so neighbouring rooms merge. The learned parser handles
+  them.
+- **Small rooms merging** in the learned parser: closets with baths, halls with kitchens.
 - **Room names** are read only where the OCR can: upside-down or heavily stylised lettering
   is missed (the KÖK on the hand-lettered plan), and a room without a printed name stays "Room".
 - **Curved walls** are approximated or missed.
@@ -394,10 +451,9 @@ Contributor and AI-agent conventions are in [CLAUDE.md](CLAUDE.md).
 
 **Next:**
 
-1. **Hatched and outlined walls:** close door gaps in thin partitions so rooms separate.
+1. **Train our own model** on CubiCasa5K with our label set, on a local GPU, behind the same
+   interface as the pretrained one, if the learned parser's small-room merges don't yield to
+   vectoriser fixes.
 2. **Printed areas** next to room names (e.g. "76,9 m²") as a second scale check.
-3. **A learned parser:** a segmentation model trained on
-   [CubiCasa5K](https://github.com/CubiCasa/CubiCasa5k), plus our own raster-to-vector step,
-   compared against this baseline with the evaluation harness.
-4. **A correction editor** in the frontend: drag a wall, relabel a room, set the scale by
+3. **A correction editor** in the frontend: drag a wall, relabel a room, set the scale by
    clicking two points. `origin_px` already maps the plan back onto the image.
