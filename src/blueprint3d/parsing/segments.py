@@ -10,6 +10,9 @@ from blueprint3d.parsing.geometry import Axis, AxisSegment, PxWall
 MIN_ASPECT = 1.5
 """A wall piece must be at least this many times longer than it is thick."""
 DIAGONAL_MIN_ASPECT = 3.0
+MAX_SPREAD = 3.0
+"""An axis piece spans at most this many times its thickness across its axis. A diagonal wall as
+thick as the others survives the long-kernel opening as a sheared band that spans far more."""
 COVER_PAD_PX = 2
 
 
@@ -36,7 +39,7 @@ def _segments(mask: np.ndarray, axis: Axis) -> list[AxisSegment]:
         thickness = float(np.median(column_heights[column_heights > 0]))
         center = y + float(np.nonzero(component)[0].mean()) + 0.5
         segment = AxisSegment(axis=axis, center=center, start=float(x), end=float(x + w), thickness=thickness)
-        if segment.length >= MIN_ASPECT * thickness:
+        if segment.length >= MIN_ASPECT * thickness and h <= MAX_SPREAD * thickness:
             segments.append(segment)
     return segments
 

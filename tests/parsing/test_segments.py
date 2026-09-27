@@ -60,3 +60,19 @@ def test_diagonal_extraction_ignores_pixels_covered_by_axis_segments():
     m[100:120, 50:350] = 255
     segs = extract_axis_segments(m, min_run=30)
     assert extract_diagonal_walls(m, segs, min_thickness=6) == []
+
+
+def test_a_diagonal_as_thick_as_the_walls_is_not_read_as_a_staircase_of_axis_pieces():
+    mask = np.zeros((400, 400), np.uint8)
+    cv2.line(mask, (60, 300), (300, 60), 255, 10)  # horizontal chords ~14 px, longer than min_run
+    assert extract_axis_segments(mask, min_run=13) == []
+    (wall,) = extract_diagonal_walls(mask, [], min_thickness=8)
+    assert abs(wall.end[0] - wall.start[0]) == pytest.approx(abs(wall.end[1] - wall.start[1]), rel=0.1)
+
+
+def test_a_wall_with_a_bulge_is_still_one_axis_piece():
+    mask = np.zeros((200, 400), np.uint8)
+    mask[100:110, 20:380] = 255
+    mask[90:110, 150:200] = 255  # a chimney block twice the wall's thickness
+    (segment,) = extract_axis_segments(mask, min_run=13)
+    assert segment.axis == "h" and segment.thickness == pytest.approx(10, abs=1)
