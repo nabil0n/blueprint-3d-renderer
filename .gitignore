@@ -227,3 +227,8 @@ samples/
 
 # Evaluation output (python -m blueprint3d.evaluation)
 eval-out/
+
+# Learned parser: third-party code, weights and datasets (CC BY-NC licensed); fetched by scripts/setup_cubicasa.py
+vendor/
+models/
+datasets/

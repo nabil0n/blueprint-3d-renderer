@@ -16,8 +16,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx2>=2.13.1",
+    "onnx>=1.23.0",
     "pytest>=8.3",
     "pytest-cov>=5.0",
+]
+# Exporting (and later training) models, never needed at runtime: `uv sync --group ml`.
+ml = [
+    "gdown>=5.2",
+    "torch>=2.8",
 ]
 
 [build-system]
@@ -34,3 +40,12 @@ testpaths = ["tests"]
 # rapidocr depends on opencv-python, which clashes with our headless build (both install cv2, and
 # the GUI build needs libGL in the slim Docker image). Never install it; the headless cv2 serves both.
 override-dependencies = ["opencv-python; sys_platform == 'never'"]
+
+# torch with CUDA (for training on the local GPU) from PyTorch's own index; everything else from PyPI.
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
