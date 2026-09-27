@@ -42,7 +42,7 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
   10. Convert to a cm `Plan` (`plan_builder.py`).
 - **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). It is empty at the moment. Remove an entry once its style is supported.
 - **Evaluation harness** (`src/blueprint3d/evaluation/`): run `uv run python -m blueprint3d.evaluation` after every parser change.
-  - It parses each image in `data/` and scores it against `data/truth.json`: scale error, room and balcony counts, and living-area error against the printed area. Living area follows the printed Swedish BOA definition (SS 21054): inside the exterior walls, interior walls included, balconies excluded.
+  - It parses each image in `data/` and scores it against `data/truth.json`: scale error, room and balcony counts, and living-area error against the printed area. Printed room names are scored too, but only reported, not part of pass/fail. Living area follows the printed Swedish BOA definition (SS 21054): inside the exterior walls, interior walls included, balconies excluded.
   - It writes `eval-out/overview.png` (captioned overlays of all plans) plus `report.json`.
   - Truth holds only facts readable off the drawing (see `truth.py`). A change that fixes one plan must not break another.
 - **Tuning the parser:** change thresholds against real plans, not just the synthetic ones. Draw an overlay of walls, openings and rooms on the cropped image and look at it. Every fix gets a synthetic regression case in `tests/parsing/synthetic.py`.

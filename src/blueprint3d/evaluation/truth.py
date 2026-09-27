@@ -8,6 +8,7 @@ Only facts that can be read off the drawing without tracing it:
         "rooms": 7,                  # enclosed spaces, including balconies
         "room_tolerance": 0,         # allowed +/- where the drawing is ambiguous (open plans)
         "balconies": 1,
+        "room_names": ["Hall", "Sovrum 1", ...],  # labels printed in rooms, if any
         "notes": "..."
       }
     }
@@ -27,6 +28,7 @@ class SampleTruth(BaseModel):
     rooms: int = Field(ge=0)
     room_tolerance: int = Field(default=0, ge=0)
     balconies: int = Field(default=0, ge=0)
+    room_names: list[str] = Field(default_factory=list)
     notes: str = ""
 
 

@@ -1,5 +1,6 @@
 """Comparing one parse result with its ground truth."""
 
+from collections import Counter
 from dataclasses import dataclass
 
 import cv2
@@ -28,6 +29,9 @@ class SampleScore:
     balconies_expected: int | None
     scale_source: str | None = None
     error: str | None = None
+    names_found: int = 0
+    names_expected: int | None = None
+    """Printed room names read correctly; reported, but not part of pass/fail."""
 
     @property
     def passed(self) -> bool | None:
@@ -68,6 +72,19 @@ def living_area_m2(plan: Plan) -> float:
     return float(mask.sum()) * AREA_RASTER_CM**2 / 10_000
 
 
+def names_found(plan: Plan, expected: list[str]) -> int:
+    """How many of the expected names (with repeats) appear among the rooms' names. An open-plan
+    room named "Kök / Entré" counts for both."""
+    read = [part.strip().lower() for room in plan.rooms if room.name for part in room.name.split(" / ")]
+    remaining = Counter(read)
+    found = 0
+    for name in expected:
+        if remaining[name.lower()] > 0:
+            remaining[name.lower()] -= 1
+            found += 1
+    return found
+
+
 def score(name: str, result: ParseResult, truth: SampleTruth | None) -> SampleScore:
     plan = result.plan
     balconies = sum(room.kind == "balcony" for room in plan.rooms)
@@ -93,6 +110,8 @@ def score(name: str, result: ParseResult, truth: SampleTruth | None) -> SampleSc
         balconies_found=balconies,
         balconies_expected=truth.balconies,
         scale_source=result.meta.scale_source,
+        names_found=names_found(plan, truth.room_names),
+        names_expected=len(truth.room_names) or None,
     )
 
 

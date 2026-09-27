@@ -69,3 +69,31 @@ def test_parse_failures_are_recorded():
     s = failed("a", "No walls found.", TRUTH)
     assert s.error == "No walls found."
     assert s.passed is False
+
+
+def named(room: Room, name: str) -> Room:
+    return room.model_copy(update={"name": name})
+
+
+def test_counts_printed_room_names_that_were_read():
+    truth = SampleTruth(cm_per_px=1.5, rooms=3, balconies=1, room_names=["Sovrum", "Sovrum", "Kök", "Balkong"])
+    rooms = [named(ROOMS[0], "SOVRUM"), named(ROOMS[1], "Kök / Sovrum / Entré"), ROOMS[2]]
+    s = score("a", result(rooms), truth)
+    assert (s.names_found, s.names_expected) == (3, 4)
+
+
+def test_a_name_with_a_slash_is_one_name():
+    truth = SampleTruth(cm_per_px=1.5, rooms=3, balconies=1, room_names=["Wc/dusch"])
+    s = score("a", result([named(ROOMS[0], "Wc/dusch"), *ROOMS[1:]]), truth)
+    assert s.names_found == 1
+
+
+def test_room_names_do_not_decide_pass_or_fail():
+    truth = SampleTruth(cm_per_px=1.5, rooms=3, balconies=1, room_names=["Sovrum"])
+    s = score("a", result(ROOMS), truth)
+    assert (s.names_found, s.names_expected, s.passed) == (0, 1, True)
+
+
+def test_names_are_not_judged_without_listed_names():
+    s = score("a", result(ROOMS), SampleTruth(cm_per_px=1.5, rooms=3, balconies=1))
+    assert s.names_expected is None

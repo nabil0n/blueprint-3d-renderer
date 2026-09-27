@@ -328,8 +328,9 @@ uv run python -m blueprint3d.evaluation        # parses every image in data/
 ```
 
 Each plan in `data/` is scored against `data/truth.json`. That file holds only facts readable
-off the drawing: the true scale (from its scale bar), the printed living area, and the number of
-rooms and balconies. The harness prints a table and writes `eval-out/overview.png`: every plan
+off the drawing: the true scale (from its scale bar), the printed living area, the number of
+rooms and balconies, and the room names printed on it. Names are reported but don't decide pass
+or fail. The harness prints a table and writes `eval-out/overview.png`: every plan
 with its overlay and scores, side by side.
 
 Living area is measured the way Swedish plans print it (BOA, SS 21054): inside the exterior
@@ -337,13 +338,13 @@ walls, *including* interior walls, excluding balconies.
 
 Results at the time of writing, on five real Swedish rental plans:
 
-| Plan style | Scale error | Area error | Rooms | Result |
-|---|---|---|---|---|
-| Modern export, colour, logo, thick walls | 0.0% | −10.0% | 7/7 | pass (at the edge) |
-| Clean vector plan with a bay window | −0.1% | −1.9% | 7/7 | pass |
-| Scanned, solid walls, open-plan kitchen | +0.3% | −0.2% | 5/6 | pass |
-| Scanned, outlined (double-line) walls | +0.1% | (not printed) | 7/8 | pass |
-| Scanned, hatched walls | −0.1% | (not printed) | 5/10 | fail: rooms merge through unplugged doors |
+| Plan style | Scale error | Area error | Rooms | Names | Result |
+|---|---|---|---|---|---|
+| Modern export, colour, logo, thick walls | 0.0% | −10.0% | 7/7 | 7/7 | pass (at the edge) |
+| Clean vector plan with a bay window | −0.1% | −1.9% | 7/7 | 7/7 | pass |
+| Scanned, solid walls, open-plan kitchen | +0.3% | −0.2% | 5/6 | 7/7 | pass |
+| Scanned, outlined walls, hand lettering | +0.1% | (not printed) | 7/8 | 4/5 | pass |
+| Scanned, hatched walls | −0.1% | (not printed) | 5/10 | 6/7 | fail: rooms merge through unplugged doors |
 
 The plans themselves are not in the repository: they are git-ignored, since real listings may
 be copyrighted. The figures in this README come from synthetic plans drawn by
