@@ -16,6 +16,7 @@ WINDOW = (0, 200, 230)
 ROOM_ALPHA = 0.4
 MARGIN_PX = 40
 HEADER_PX = 34
+MAX_TILE_ASPECT = 1.6
 
 
 def _to_image(result: ParseResult):
@@ -82,12 +83,16 @@ def with_caption(image: np.ndarray, lines: list[str]) -> np.ndarray:
     return np.vstack([header, image])
 
 
+def _fit(image: np.ndarray, height: int, width: int) -> np.ndarray:
+    scale = min(height / image.shape[0], width / image.shape[1])
+    return cv2.resize(image, (max(1, round(image.shape[1] * scale)), max(1, round(image.shape[0] * scale))))
+
+
 def contact_sheet(tiles: list[tuple[np.ndarray, list[str]]], columns: int = 3, tile_height: int = 700) -> np.ndarray:
-    """Images scaled to the same height, captioned at that size, and laid out in a grid."""
-    scaled = [
-        with_caption(cv2.resize(img, (max(1, round(img.shape[1] * tile_height / img.shape[0])), tile_height)), caption)
-        for img, caption in tiles
-    ]
+    """Images fitted into equal cells (so one very wide image cannot squash the rest), captioned
+    at that size, and laid out in a grid."""
+    max_width = round(tile_height * MAX_TILE_ASPECT)
+    scaled = [with_caption(_fit(img, tile_height, max_width), caption) for img, caption in tiles]
     cell_height = max(t.shape[0] for t in scaled)
     cell_width = max(t.shape[1] for t in scaled)
     rows = math.ceil(len(scaled) / columns)
