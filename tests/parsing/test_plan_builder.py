@@ -16,6 +16,18 @@ def test_wall_bordering_outside_space_is_exterior():
     assert mark_exterior(wall(), outside).exterior
 
 
+def test_a_faint_edge_along_the_wall_face_does_not_hide_the_outside():
+    outside = np.zeros((400, 400), bool)
+    outside[:88, :] = True  # the wall face is at y=95; a light anti-aliased edge covers 88..94
+    assert mark_exterior(wall(), outside).exterior
+
+
+def test_wall_on_the_edge_of_the_plan_area_is_exterior():
+    # The crop holds the whole plan, so anything beyond its edge is outside.
+    edge_wall = wall(start=(100.0, 4.0), end=(300.0, 4.0))
+    assert mark_exterior(edge_wall, np.zeros((400, 400), bool)).exterior
+
+
 def test_wall_between_rooms_is_interior():
     assert not mark_exterior(wall(), np.zeros((400, 400), bool)).exterior
 

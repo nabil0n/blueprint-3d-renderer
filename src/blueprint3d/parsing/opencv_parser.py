@@ -19,7 +19,7 @@ from blueprint3d.parsing.merge import merge_parallel_walls
 from blueprint3d.parsing.openings import classify_gap, merge_collinear
 from blueprint3d.parsing.plan_builder import build_plan, mark_exterior, windows_facing_outside
 from blueprint3d.parsing.result import ParseMeta, ParseResult
-from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes
+from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes, outside_space
 from blueprint3d.parsing.scale import ScaleEstimate, estimate_scale, page_format_scale
 from blueprint3d.parsing.scale_bar import ScaleBar, detect_scale_bar
 from blueprint3d.parsing.segments import extract_axis_segments, extract_diagonal_walls
@@ -97,17 +97,16 @@ class OpenCvParser:
         )
 
         regions = _find_rooms(area, runs, scale.cm_per_px)
-        walls = [
-            windows_facing_outside(mark_exterior(w, regions.outside), regions.outside)
-            for w in (*axis_walls, *diagonal_walls)
-        ]
+        found_walls = [*axis_walls, *diagonal_walls]
         completion = complete_boundaries(
             area.ink,
-            covered_mask(area.wall_mask, walls),
+            covered_mask(area.wall_mask, found_walls),
             regions.contours,
             regions.outside_drawing,
             _boundary_config(stats, scale.cm_per_px),
         )
+        outside = outside_space(regions, completion.balconies)
+        walls = [windows_facing_outside(mark_exterior(w, outside), outside) for w in found_walls]
         kinds: dict[int, RoomKind] = dict.fromkeys(completion.balconies, "balcony")
         merged = merge_parallel_walls([*walls, *completion.walls], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
         plan = build_plan(merged, regions.polygons, scale.cm_per_px, kinds)

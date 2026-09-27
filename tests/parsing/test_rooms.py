@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 from blueprint3d.parsing.geometry import WallRun
-from blueprint3d.parsing.rooms import find_rooms, gap_rects, merge_room_passes
+from blueprint3d.parsing.rooms import find_rooms, gap_rects, merge_room_passes, outside_space
 
 
 def two_room_barrier():
@@ -77,3 +77,27 @@ def test_gap_rects_cover_openings_across_the_wall():
     vertical = WallRun(axis="v", center=50, thickness=10, start=0, end=300, gaps=((20, 80),))
     [(x0, y0, x1, y1)] = gap_rects([vertical], margin=0)
     assert (x0, y0, x1, y1) == (45, 20, 55, 80)
+
+
+def outlined_flat():
+    """A room whose walls are drawn as two thin lines (the thick-wall pass sees nothing), with a
+    window box drawn just outside the east wall and a balcony outlined below."""
+    ink = np.zeros((500, 600), np.uint8)
+    cv2.rectangle(ink, (50, 50), (449, 349), 255, 1)
+    cv2.rectangle(ink, (60, 60), (439, 339), 255, 1)
+    cv2.rectangle(ink, (449, 150), (470, 250), 255, 1)  # window box outside the east wall
+    cv2.rectangle(ink, (100, 349), (300, 450), 255, 1)  # balcony
+    primary = find_rooms(np.zeros_like(ink), min_area_px=2000, min_inradius_px=10)
+    return merge_room_passes(primary, find_rooms(ink, min_area_px=2000, min_inradius_px=10))
+
+
+def test_outside_space_keeps_rooms_inside_even_where_thick_walls_leak():
+    regions = outlined_flat()
+    assert regions.outside[200, 200], "the thick-wall pass leaks into the room"
+    balcony = next(i for i, p in enumerate(regions.polygons) if min(y for _, y in p) >= 340)
+    outside = outside_space(regions, frozenset({balcony}))
+    assert outside[5, 5]
+    assert not outside[200, 200], "the room is inside"
+    assert not outside[200, 55], "so is the hollow between the two wall lines"
+    assert outside[400, 200], "the balcony is open air"
+    assert outside[200, 460], "a window box drawn outside the wall is outside too"

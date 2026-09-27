@@ -9,25 +9,29 @@ import numpy as np
 from blueprint3d.parsing.geometry import PxPoint, PxWall
 from blueprint3d.schema import Opening, Plan, Point, Room, RoomKind, Wall
 
-EXTERIOR_PROBE_PX = 4
+EXTERIOR_PROBE_PX = 8
+"""How far beyond a wall face to look for outside space; faint anti-aliased edges and outline
+strokes along the face are skipped."""
 EXTERIOR_SAMPLES = (0.1, 0.3, 0.5, 0.7, 0.9)
 DECIMALS = 1
 
 
 def _faces_outside(wall: PxWall, distance: float, outside: np.ndarray) -> bool:
-    """Is there outside space just beyond either face of the wall, `distance` px from its start?"""
+    """Is there outside space just beyond either face of the wall, `distance` px from its start?
+    Beyond the edge of the plan area counts as outside: the area holds the whole plan."""
     (x0, y0), (x1, y1) = wall.start, wall.end
     length = math.hypot(x1 - x0, y1 - y0)
     if length == 0:
         return False
     dx, dy = (x1 - x0) / length, (y1 - y0) / length
-    reach = wall.thickness / 2 + EXTERIOR_PROBE_PX
     px, py = x0 + dx * distance, y0 + dy * distance
     height, width = outside.shape
     for side in (-1, 1):
-        x, y = round(px - side * dy * reach), round(py + side * dx * reach)
-        if 0 <= x < width and 0 <= y < height and outside[y, x]:
-            return True
+        for step in range(1, EXTERIOR_PROBE_PX + 1):
+            reach = wall.thickness / 2 + step
+            x, y = round(px - side * dy * reach), round(py + side * dx * reach)
+            if not (0 <= x < width and 0 <= y < height) or outside[y, x]:
+                return True
     return False
 
 

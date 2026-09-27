@@ -256,6 +256,9 @@ known walls, so a cupboard drawn against a wall is never mistaken for one.
   walls side by side. Parallel walls of the same height that overlap and lie within 45 cm merge
   into one wall spanning both faces.
 - **Exterior walls.** A wall with outside space just beyond either face is marked exterior.
+  Outside here is space beyond *all* drawn lines, plus balconies. The thick-wall pass's outside
+  won't do: with outlined walls it leaks into the whole apartment, and every opening with a
+  threshold line would pass as a window.
 - **Centimetres.** Pixel coordinates are multiplied by the scale. Every opening is checked to
   fit inside its wall, and the result is validated against the plan schema.
 
@@ -317,9 +320,9 @@ Results at the time of writing, on five real Swedish rental plans:
 |---|---|---|---|---|
 | Modern export, colour, logo, thick walls | 0.0% | −10.0% | 7/7 | pass (at the edge) |
 | Clean vector plan with a bay window | −0.1% | −1.9% | 7/7 | pass |
-| Scanned, solid walls, open-plan kitchen | +0.3% | −1.7% | 5/6 | pass |
+| Scanned, solid walls, open-plan kitchen | +0.3% | −0.2% | 5/6 | pass |
 | Scanned, outlined (double-line) walls | +0.1% | (not printed) | 7/8 | pass |
-| Scanned, hatched walls | – | – | 0/10 | not supported yet |
+| Scanned, hatched walls | −0.1% | (not printed) | 5/10 | fail: rooms merge through unplugged doors |
 
 The plans themselves are not in the repository: they are git-ignored, since real listings may
 be copyrighted. The figures in this README come from synthetic plans drawn by

@@ -118,6 +118,31 @@ def merge_room_passes(primary: RoomRegions, fallback: RoomRegions) -> RoomRegion
     )
 
 
+def outside_space(regions: RoomRegions, balconies: frozenset[int]) -> np.ndarray:
+    """Space outside the apartment: beyond all drawn lines, plus balconies, plus pockets that are
+    no room and open onto that space across thin lines (e.g. window boxes drawn outside a wall).
+
+    Not the thick-wall pass's outside: where walls are outlined it leaks into the whole plan, and
+    the hollows inside outlined walls would make every interior opening look like a window."""
+    rooms = np.zeros(regions.outside.shape, np.uint8)
+    open_air = regions.outside_drawing.copy()
+    for i, polygon in enumerate(regions.polygons):
+        cv2.fillPoly(rooms, [np.array(polygon, np.int32)], 1)
+        if i in balconies:
+            open_air |= _filled(polygon, rooms.shape)
+    pockets = (regions.outside & ~regions.outside_drawing & (rooms == 0)).astype(np.uint8)
+    count, labels = cv2.connectedComponents(pockets, connectivity=4)
+    reach = np.ones((2 * ABSORB_REACH_PX + 1,) * 2, np.uint8)
+    touching = np.unique(labels[(cv2.dilate(regions.outside_drawing.astype(np.uint8), reach) > 0) & (pockets > 0)])
+    return open_air | np.isin(labels, touching[touching > 0])
+
+
+def _filled(polygon: Polygon, shape: tuple[int, ...]) -> np.ndarray:
+    mask = np.zeros(shape, np.uint8)
+    cv2.fillPoly(mask, [np.array(polygon, np.int32)], 1)
+    return mask > 0
+
+
 def _room_outline(region: np.ndarray) -> tuple[Polygon, np.ndarray] | None:
     # Swallow the thin lines between a room and the pockets it absorbed.
     region = cv2.morphologyEx(region, cv2.MORPH_CLOSE, np.ones((FILL_LINES_PX, FILL_LINES_PX), np.uint8))
