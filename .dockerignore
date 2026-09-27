@@ -8,3 +8,10 @@ htmlcov
 frontend/node_modules
 frontend/dist
 frontend/coverage
+# Large or third-party files that never belong in an image (models are bind-mounted in compose.yaml)
+models
+vendor
+datasets
+data
+samples
+eval-out

@@ -14,6 +14,9 @@ services:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ./src:/app/src
+      # Exported learned models (scripts/setup_cubicasa.py + export_cubicasa_onnx.py). Read-only; without
+      # them the backend still runs and simply doesn't offer the learned parser.
+      - ./models:/app/models:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
