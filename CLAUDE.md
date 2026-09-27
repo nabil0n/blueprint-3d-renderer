@@ -32,6 +32,10 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
      - **Another room across thin lines:** a wall with a door along the chord.
   8. Convert to a cm `Plan` (`plan_builder.py`).
 - **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). For example, scanned plans with hatched double-line walls. Remove the entry once a style is supported.
+- **Evaluation harness** (`src/blueprint3d/evaluation/`): run `uv run python -m blueprint3d.evaluation` after every parser change.
+  - It parses each image in `data/` and scores it against `data/truth.json`: scale error, living-area error against the printed area, and room and balcony counts.
+  - It writes `eval-out/overview.png` (captioned overlays of all plans) plus `report.json`.
+  - Truth holds only facts readable off the drawing (see `truth.py`). A change that fixes one plan must not break another.
 - **Tuning the parser:** change thresholds against real plans, not just the synthetic ones. Draw an overlay of walls, openings and rooms on the cropped image and look at it. Every fix gets a synthetic regression case in `tests/parsing/synthetic.py`.
 
 ## Layout

@@ -224,3 +224,6 @@ frontend/coverage/
 # Real floor plans from rental sites (may be copyrighted); keep them local.
 data/
 samples/
+
+# Evaluation output (python -m blueprint3d.evaluation)
+eval-out/

@@ -1,0 +1,60 @@
+import pytest
+
+from blueprint3d.evaluation.metrics import failed, living_area_m2, score
+from blueprint3d.evaluation.truth import SampleTruth
+from blueprint3d.parsing.result import ParseMeta, ParseResult
+from blueprint3d.schema import Plan, Point, Room
+
+
+def square_room(room_id: str, side_cm: float, kind: str = "other") -> Room:
+    corners = [(0, 0), (side_cm, 0), (side_cm, side_cm), (0, side_cm)]
+    return Room(id=room_id, kind=kind, polygon=[Point(x=x, y=y) for x, y in corners])
+
+
+def result(rooms: list[Room], cm_per_px: float = 1.5) -> ParseResult:
+    meta = ParseMeta(
+        parser="test", cm_per_px=cm_per_px, scale_source="doors", scale_detail="", image_width=10, image_height=10
+    )
+    return ParseResult(plan=Plan(rooms=rooms), meta=meta)
+
+
+TRUTH = SampleTruth(cm_per_px=1.5, listed_area_m2=20, rooms=3, room_tolerance=0, balconies=1)
+ROOMS = [square_room("r1", 300), square_room("r2", 332), square_room("r3", 200, kind="balcony")]
+
+
+def test_living_area_excludes_balconies():
+    assert living_area_m2(Plan(rooms=ROOMS)) == pytest.approx(9 + 11.0224)
+
+
+def test_score_compares_against_truth():
+    s = score("plan.jpg", result(ROOMS, cm_per_px=1.65), TRUTH)
+    assert s.scale_error == pytest.approx(0.10)
+    assert s.area_error == pytest.approx((9 + 11.0224) / 20 - 1)
+    assert (s.rooms_found, s.balconies_found) == (3, 1)
+    assert s.error is None
+
+
+def test_pass_requires_every_known_metric_within_tolerance():
+    assert score("a", result(ROOMS), TRUTH).passed
+    assert not score("a", result(ROOMS, cm_per_px=1.65), TRUTH).passed, "scale 10 % off"
+    assert not score("a", result(ROOMS[:2]), TRUTH).passed, "balcony missing"
+    lenient = TRUTH.model_copy(update={"rooms": 4, "room_tolerance": 1})
+    assert score("a", result(ROOMS), lenient).passed
+
+
+def test_unknown_metrics_are_skipped():
+    s = score("a", result(ROOMS), SampleTruth(cm_per_px=1.5, rooms=3, balconies=1))
+    assert s.area_error is None
+    assert s.passed
+
+
+def test_without_truth_nothing_is_judged():
+    s = score("a", result(ROOMS), None)
+    assert s.scale_error is None and s.rooms_expected is None
+    assert s.passed is None
+
+
+def test_parse_failures_are_recorded():
+    s = failed("a", "No walls found.", TRUTH)
+    assert s.error == "No walls found."
+    assert s.passed is False
