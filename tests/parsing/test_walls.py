@@ -36,6 +36,22 @@ def test_thin_walls_count_when_thick_walls_dominate():
     assert walls.mask[100:300, 80:280].max() == 0
 
 
+def test_six_pixel_partitions_count_when_text_stops_at_four():
+    """Stroke widths 2-4 (text), a hole at 5, then 6 px partitions and thick walls (dahlströmsgatan)."""
+    img = blank(700, 400)
+    for y in (40, 340):
+        cv2.rectangle(img, (40, y), (659, y + 31), BLACK, -1)  # 32 px exterior walls
+    cv2.rectangle(img, (40, 40), (71, 371), BLACK, -1)
+    cv2.rectangle(img, (400, 72), (405, 339), BLACK, -1)  # 6 px partition
+    for i in range(12):
+        cv2.putText(img, "Sovrum", (90 + (i % 3) * 95, 120 + (i // 3) * 50), cv2.FONT_HERSHEY_SIMPLEX, 0.9, BLACK, 2)
+
+    walls = extract_wall_mask(to_binary(img))
+
+    assert walls.mask[200, 402] == 255
+    assert walls.mask[90:300, 90:380].max() == 0
+
+
 def test_wall_mask_is_aligned_with_the_input():
     """An even-sized opening kernel shifts the result by a pixel, which lets rooms leak past door plugs."""
     img = blank(400, 300)

@@ -118,7 +118,7 @@ def _locate_plan(gray: np.ndarray) -> _PlanArea:
     """Find the plan with a rough wall mask, then re-derive walls from strokes inside it only:
     page text (bold headings, legends) would otherwise skew the thin/thick split."""
     binary = binarize(gray)
-    rough = extract_wall_mask(binary)
+    rough = extract_wall_mask(binary, partitions=False)
     page_ink = line_ink(gray, binary)
     x0, y0, x1, y1 = expand_to_ink(crop_box(rough.mask, rough.min_thickness), page_ink, rough.mask)
     plan_binary = binary[y0:y1, x0:x1]

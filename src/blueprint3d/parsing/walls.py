@@ -13,8 +13,12 @@ MIN_WALL_HALF_WIDTH_PX = 2.5
 MIN_SIGNIFICANT_SHARE = 0.005
 MIN_SIGNIFICANT_COUNT = 3
 """Histogram bins below these (share of ridge pixels, absolute) are treated as noise."""
-WIDTH_JUMP_RATIO = 1.6
-WIDTH_JUMP_MIN_PX = 3
+WALL_JUMP = (1.6, 3)
+"""(ratio, px) a width-histogram jump needs to separate thin strokes from walls."""
+PARTITION_JUMP = (1.4, 2)
+"""A weaker jump (one empty bin is enough) that separates text from thin partitions."""
+PARTITION_RUN_FACTOR = 8
+"""Partitions must contain a straight run this many times their minimum width; letters don't."""
 
 
 @dataclass(frozen=True)
@@ -38,35 +42,60 @@ def _ridge_half_widths(binary: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return dist, ridge
 
 
-def extract_wall_mask(binary: np.ndarray) -> WallMask:
+def _odd(size: int) -> int:
+    """Odd kernel: an even one has an off-centre anchor and shifts the mask by a pixel. Rounding
+    down keeps strokes exactly at the threshold."""
+    return max(3, size if size % 2 else size - 1)
+
+
+def extract_wall_mask(binary: np.ndarray, partitions: bool = True) -> WallMask:
+    """Walls are strokes above the first clear jump in stroke width. With `partitions`, thin
+    partitions (between text and wall widths) are added when they form long straight runs, which
+    text never does. Leave them out when locating the plan: site maps are full of long thin lines."""
     dist, ridge = _ridge_half_widths(binary)
     widths = 2 * dist[ridge]
     if widths.size == 0:
         raise ParseError("No dark strokes found in the image.")
 
-    # Odd kernel: an even one has an off-centre anchor and shifts the mask by a pixel. Rounding
-    # down keeps walls exactly at the threshold; thin strokes sit well below it anyway.
-    threshold = max(3, _wall_width_threshold(widths))
-    kernel_size = threshold if threshold % 2 else threshold - 1
-    kernel = np.ones((kernel_size, kernel_size), np.uint8)
-    mask = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    wall_kernel = _odd(_wall_width_threshold(widths, *WALL_JUMP))
+    mask = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((wall_kernel, wall_kernel), np.uint8))
     if not mask.any():
         raise ParseError("No walls found. The plan may be drawn with thin lines only.")
-    return WallMask(mask=mask, min_thickness=kernel_size)
+
+    partition_kernel = _odd(_wall_width_threshold(widths, *PARTITION_JUMP))
+    if partitions and partition_kernel < wall_kernel:
+        mask = cv2.bitwise_or(mask, _long_partitions(binary, partition_kernel))
+    return WallMask(mask=mask, min_thickness=wall_kernel)
 
 
-def _wall_width_threshold(widths: np.ndarray) -> int:
-    """Smallest stroke width (px) that counts as a wall.
+def _long_partitions(binary: np.ndarray, kernel_size: int) -> np.ndarray:
+    """Strokes at least `kernel_size` wide that belong to a long straight run."""
+    thick_enough = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((kernel_size, kernel_size), np.uint8))
+    run = _odd(PARTITION_RUN_FACTOR * kernel_size)
+    long_runs = cv2.bitwise_or(
+        cv2.morphologyEx(thick_enough, cv2.MORPH_OPEN, np.ones((1, run), np.uint8)),
+        cv2.morphologyEx(thick_enough, cv2.MORPH_OPEN, np.ones((run, 1), np.uint8)),
+    )
+    # Keep whole strokes that contain a long run, so bends and stubs of a partition come along.
+    count, labels = cv2.connectedComponents(thick_enough, connectivity=8)
+    keep = np.zeros(count, bool)
+    keep[np.unique(labels[long_runs > 0])] = True
+    keep[0] = False
+    return np.where(keep[labels], 255, 0).astype(np.uint8)
+
+
+def _wall_width_threshold(widths: np.ndarray, jump_ratio: float, jump_px: int) -> int:
+    """Smallest stroke width (px) above the first jump in the width histogram.
 
     Plans typically show a cluster of thin strokes (text, furniture, symbols) and then one or
-    more wall widths. Cut at the first clear jump in the width histogram; Otsu is only a fallback,
-    because with several wall widths it tends to split between walls instead.
+    more wall widths. Otsu is only a fallback: with several wall widths it tends to split between
+    walls instead.
     """
     counts = np.bincount(np.round(widths).astype(int))
     floor = max(MIN_SIGNIFICANT_COUNT, MIN_SIGNIFICANT_SHARE * counts.sum())
     present = [w for w in range(1, len(counts)) if counts[w] >= floor]
     for lo, hi in zip(present, present[1:], strict=False):
-        if hi >= WIDTH_JUMP_RATIO * lo and hi - lo >= WIDTH_JUMP_MIN_PX:
+        if hi >= jump_ratio * lo and hi - lo >= jump_px:
             return math.ceil(math.sqrt(lo * hi))
 
     scaled = np.clip(widths * 5, 0, 255).astype(np.uint8).reshape(-1, 1)
