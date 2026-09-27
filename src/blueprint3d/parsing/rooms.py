@@ -8,13 +8,19 @@ import numpy as np
 from blueprint3d.parsing.geometry import PxPoint, WallRun
 
 Rect = tuple[int, int, int, int]
+Polygon = tuple[PxPoint, ...]
 
 
 @dataclass(frozen=True)
 class RoomRegions:
-    polygons: tuple[tuple[PxPoint, ...], ...]
+    polygons: tuple[Polygon, ...]
+    """Simplified outline per room, for the plan."""
+    contours: tuple[np.ndarray, ...]
+    """Full-detail outline per room (N x 2 int, every boundary pixel), aligned with `polygons`."""
     outside: np.ndarray
     """Boolean mask of free space connected to the image border (outside the apartment)."""
+    outside_drawing: np.ndarray
+    """Like `outside`, but beyond all drawn lines (so a balcony is not part of it)."""
 
 
 def gap_rects(runs: list[WallRun], margin: int) -> list[Rect]:
@@ -39,14 +45,17 @@ def find_rooms(barrier: np.ndarray, *, min_area_px: float, min_inradius_px: floa
     border = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
     outside = np.isin(labels, border[border > 0])
 
-    polygons = []
+    polygons, contours = [], []
     for i in range(1, count):
         if i in border or stats[i, cv2.CC_STAT_AREA] < min_area_px:
             continue
-        polygon = _room_polygon((labels == i).astype(np.uint8), min_inradius_px)
-        if polygon is not None:
-            polygons.append(polygon)
-    return RoomRegions(polygons=tuple(polygons), outside=outside)
+        room = _room_outline((labels == i).astype(np.uint8), min_inradius_px)
+        if room is not None:
+            polygons.append(room[0])
+            contours.append(room[1])
+    return RoomRegions(
+        polygons=tuple(polygons), contours=tuple(contours), outside=outside, outside_drawing=outside
+    )
 
 
 def merge_room_passes(primary: RoomRegions, fallback: RoomRegions) -> RoomRegions:
@@ -56,22 +65,27 @@ def merge_room_passes(primary: RoomRegions, fallback: RoomRegions) -> RoomRegion
     `outside` stays the primary pass's: beyond the thick walls, so balconies count as outside."""
     height, width = primary.outside.shape
 
-    def in_primary_outside(polygon: tuple[PxPoint, ...]) -> bool:
+    def in_primary_outside(polygon: Polygon) -> bool:
         mask = np.zeros((height, width), np.uint8)
         cv2.fillPoly(mask, [np.array(polygon, np.int32)], 1)
         inside = mask > 0
         return bool(inside.any() and primary.outside[inside].mean() > 0.5)
 
-    extra = tuple(p for p in fallback.polygons if in_primary_outside(p))
-    return RoomRegions(polygons=(*primary.polygons, *extra), outside=primary.outside)
+    extra = [i for i, p in enumerate(fallback.polygons) if in_primary_outside(p)]
+    return RoomRegions(
+        polygons=(*primary.polygons, *(fallback.polygons[i] for i in extra)),
+        contours=(*primary.contours, *(fallback.contours[i] for i in extra)),
+        outside=primary.outside,
+        outside_drawing=fallback.outside,
+    )
 
 
-def _room_polygon(region: np.ndarray, min_inradius_px: float) -> tuple[PxPoint, ...] | None:
+def _room_outline(region: np.ndarray, min_inradius_px: float) -> tuple[Polygon, np.ndarray] | None:
     if cv2.distanceTransform(region, cv2.DIST_L2, 5).max() < min_inradius_px:
         return None
-    contours, _ = cv2.findContours(region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contour = max(contours, key=cv2.contourArea)
+    found, _ = cv2.findContours(region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contour = max(found, key=cv2.contourArea)
     approx = cv2.approxPolyDP(contour, epsilon=max(2.0, 0.005 * cv2.arcLength(contour, True)), closed=True)
     if len(approx) < 3:
         return None
-    return tuple((float(x), float(y)) for x, y in approx.reshape(-1, 2))
+    return tuple((float(x), float(y)) for x, y in approx.reshape(-1, 2)), contour.reshape(-1, 2)

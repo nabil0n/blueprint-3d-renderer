@@ -50,3 +50,5 @@ class PxWall:
     thickness: float
     openings: tuple[PxOpening, ...] = ()
     exterior: bool = False
+    height_cm: float | None = None
+    """None means the default wall height; set for low walls such as balcony railings."""

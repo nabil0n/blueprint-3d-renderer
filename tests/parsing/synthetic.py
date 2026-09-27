@@ -60,6 +60,34 @@ def draw_two_room_plan(window_ink: int = 0, interior_px: int = INTERIOR_PX) -> n
     return img
 
 
+def draw_bay_and_balcony_plan() -> np.ndarray:
+    """Two rooms; the north-west corner is cut off by an angled glazed wall (thin gray lines between
+    two thick corner blocks, like a bay window), and a balcony with a thin railing sits south of
+    the west room, reached through a door in the south wall."""
+    img = blank(1000, 900)
+    cv2.rectangle(img, (250, 100), (899, 119), BLACK, -1)  # north
+    cv2.rectangle(img, (880, 100), (899, 699), BLACK, -1)  # east
+    cv2.rectangle(img, (100, 680), (899, 699), BLACK, -1)  # south
+    cv2.rectangle(img, (100, 250), (119, 699), BLACK, -1)  # west
+    cv2.rectangle(img, (494, 120), (505, 679), BLACK, -1)  # interior
+    cv2.rectangle(img, (494, 380), (505, 380 + DOOR_PX - 1), WHITE, -1)
+
+    # Angled glazed wall: corner blocks plus three parallel light-gray lines between them.
+    cv2.rectangle(img, (100, 222), (127, 249), BLACK, -1)
+    cv2.rectangle(img, (222, 100), (249, 127), BLACK, -1)
+    for offset in (-9, 0, 9):
+        shift = round(offset / np.sqrt(2))
+        cv2.line(img, (122 + shift, 229 + shift), (229 + shift, 122 + shift), (170, 170, 170), 1)
+
+    # Door from the west room to the balcony, and the balcony railing (a single thin line).
+    cv2.rectangle(img, (400, 680), (400 + DOOR_PX - 1, 699), WHITE, -1)
+    cv2.rectangle(img, (300, 699), (600, 830), BLACK, 1)
+
+    cv2.putText(img, "Living", (250, 400), cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 1)
+    cv2.putText(img, "Balcony", (400, 780), cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 1)
+    return img
+
+
 def encode_png(img: np.ndarray) -> bytes:
     ok, buf = cv2.imencode(".png", img)
     assert ok

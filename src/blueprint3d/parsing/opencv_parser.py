@@ -2,7 +2,8 @@
 
 Pipeline: binarise -> keep thick strokes (walls) -> crop to the plan -> axis-aligned wall pieces
 (+ angled leftovers) -> merge collinear pieces, gaps become doors/windows -> estimate scale ->
-rooms from enclosed free space -> mark walls bordering the outside as exterior -> Plan in cm.
+rooms from enclosed free space -> mark walls bordering the outside as exterior -> complete room
+outlines drawn with thin lines (angled windows/doors, balcony railings) -> Plan in cm.
 """
 
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask
 from blueprint3d.parsing.errors import ParseError
 from blueprint3d.parsing.geometry import PxOpening, PxWall, WallRun
 from blueprint3d.parsing.image_io import MAX_SIDE_PX, binarize, decode_image
@@ -19,7 +21,8 @@ from blueprint3d.parsing.result import ParseMeta, ParseResult
 from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes
 from blueprint3d.parsing.scale import ScaleEstimate, estimate_scale
 from blueprint3d.parsing.segments import extract_axis_segments, extract_diagonal_walls
-from blueprint3d.parsing.walls import crop_box, expand_to_ink, extract_wall_mask, thickness_stats
+from blueprint3d.parsing.walls import ThicknessStats, crop_box, expand_to_ink, extract_wall_mask, thickness_stats
+from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM, RoomKind
 
 MIN_RUN_FACTOR = 1.1
 MIN_RUN_EXTRA_PX = 2
@@ -32,6 +35,12 @@ MIN_ROOM_HALF_WIDTH_CM = 35.0
 GAP_PLUG_MARGIN_PX = 2
 LIGHT_INK_LEVEL = 230
 """Gray levels below this count as ink when looking for thin details (windows are often light gray)."""
+RAILING_THICKNESS_CM = 5.0
+MIN_BOUNDARY_PIECE_CM = 40.0
+MIN_DOOR_CM = 55.0
+MAX_DOOR_CM = 200.0
+PROBE_REACH_FACTOR = 3.0
+"""How far (in max wall thicknesses) to look beyond a room outline for what bounds it."""
 
 
 @dataclass(frozen=True)
@@ -70,7 +79,15 @@ class OpenCvParser:
             windows_facing_outside(mark_exterior(w, regions.outside), regions.outside)
             for w in (*axis_walls, *diagonal_walls)
         ]
-        plan = build_plan(walls, regions.polygons, scale.cm_per_px)
+        completion = complete_boundaries(
+            area.ink,
+            covered_mask(area.wall_mask, walls),
+            regions.contours,
+            regions.outside_drawing,
+            _boundary_config(stats, scale.cm_per_px),
+        )
+        kinds: dict[int, RoomKind] = dict.fromkeys(completion.balconies, "balcony")
+        plan = build_plan([*walls, *completion.walls], regions.polygons, scale.cm_per_px, kinds)
 
         width, height = decoded.original_size
         meta = ParseMeta(
@@ -80,7 +97,7 @@ class OpenCvParser:
             scale_detail=scale.detail,
             image_width=width,
             image_height=height,
-            warnings=_warnings(scale, len(diagonal_walls), len(plan.rooms)),
+            warnings=_warnings(scale, len(plan.rooms)),
         )
         return ParseResult(plan=plan, meta=meta)
 
@@ -133,12 +150,22 @@ def _find_rooms(area: _PlanArea, runs: list[WallRun], cm_per_px: float) -> RoomR
     )
 
 
-def _warnings(scale: ScaleEstimate, diagonal_count: int, room_count: int) -> list[str]:
+def _boundary_config(stats: ThicknessStats, cm_per_px: float) -> BoundaryConfig:
+    return BoundaryConfig(
+        wall_thickness=stats.maximum,
+        door_wall_thickness=stats.typical,
+        railing_thickness=RAILING_THICKNESS_CM / cm_per_px,
+        railing_height_cm=DEFAULT_WALL_HEIGHT_CM / 2,
+        min_piece=MIN_BOUNDARY_PIECE_CM / cm_per_px,
+        door_range=(MIN_DOOR_CM / cm_per_px, MAX_DOOR_CM / cm_per_px),
+        probe_reach=PROBE_REACH_FACTOR * stats.maximum,
+    )
+
+
+def _warnings(scale: ScaleEstimate, room_count: int) -> list[str]:
     warnings = []
     if scale.source != "user":
         warnings.append(f"Scale is estimated. {scale.detail} Enter the real scale if sizes look off.")
-    if diagonal_count:
-        warnings.append(f"{diagonal_count} angled wall piece(s) found; openings in angled walls are not detected.")
     if room_count == 0:
         warnings.append("No enclosed rooms found; floors are missing.")
     return warnings

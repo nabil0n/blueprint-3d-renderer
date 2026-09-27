@@ -63,10 +63,15 @@ def classify_gap(binary: np.ndarray, run: WallRun, gap: Gap) -> Literal["door", 
     band = _gap_band(binary if run.axis == "h" else binary.T, run, gap)
     if band.size == 0:
         return "door"
-    is_line = (band > 0).mean(axis=1) >= LINE_COVERAGE
-    # Count separate lines: rising edges in the per-row flags.
-    lines = int(is_line[0]) + int(np.count_nonzero(is_line[1:] & ~is_line[:-1]))
+    lines = count_line_groups((band > 0).mean(axis=1) >= LINE_COVERAGE)
     return "window" if lines >= MIN_WINDOW_LINES else "door"
+
+
+def count_line_groups(is_line: np.ndarray) -> int:
+    """Number of separate lines in per-row flags (runs of consecutive True values)."""
+    if is_line.size == 0:
+        return 0
+    return int(is_line[0]) + int(np.count_nonzero(is_line[1:] & ~is_line[:-1]))
 
 
 def _gap_band(horizontal: np.ndarray, run: WallRun, gap: Gap) -> np.ndarray:

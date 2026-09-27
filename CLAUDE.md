@@ -26,7 +26,12 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
   4. Merge collinear pieces; the gaps between them are openings (`openings.py`). An opening is a window if it contains 2 or more *solid* lines along the wall, checked on light-gray ink, and faces outside space. Dashed lines mean an open passage.
   5. Scale: user value, else median door gap assumed to be 80 cm, else exterior wall thickness (`scale.py`).
   6. Rooms (`rooms.py`): enclosed space from thick walls plus plugged openings, with a fallback pass over all ink for spaces bounded by thin lines (balconies, angled bay windows).
-  7. Convert to a cm `Plan` (`plan_builder.py`).
+  7. Complete room outlines that no wall explains (`boundaries.py`). Probe outward from each uncovered stretch; probes stop at known walls.
+     - **Outside behind 2+ parallel lines:** an exterior wall with a window. This covers angled walls.
+     - **Outside behind 1 line:** a railing (5 cm thick, half height), and the room becomes a `balcony`.
+     - **Another room across thin lines:** a wall with a door along the chord.
+  8. Convert to a cm `Plan` (`plan_builder.py`).
+- **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). For example, scanned plans with hatched double-line walls. Remove the entry once a style is supported.
 - **Tuning the parser:** change thresholds against real plans, not just the synthetic ones. Draw an overlay of walls, openings and rooms on the cropped image and look at it. Every fix gets a synthetic regression case in `tests/parsing/synthetic.py`.
 
 ## Layout

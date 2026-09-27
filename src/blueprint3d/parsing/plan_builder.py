@@ -1,12 +1,13 @@
 """Converting pixel-space parse output into a validated Plan in centimetres."""
 
 import math
+from collections.abc import Mapping
 from dataclasses import replace
 
 import numpy as np
 
 from blueprint3d.parsing.geometry import PxPoint, PxWall
-from blueprint3d.schema import Opening, Plan, Point, Room, Wall
+from blueprint3d.schema import Opening, Plan, Point, Room, RoomKind, Wall
 
 EXTERIOR_PROBE_PX = 4
 EXTERIOR_SAMPLES = (0.1, 0.3, 0.5, 0.7, 0.9)
@@ -47,7 +48,13 @@ def windows_facing_outside(wall: PxWall, outside: np.ndarray) -> PxWall:
     return replace(wall, openings=openings)
 
 
-def build_plan(walls: list[PxWall], rooms: tuple[tuple[PxPoint, ...], ...], cm_per_px: float) -> Plan:
+def build_plan(
+    walls: list[PxWall],
+    rooms: tuple[tuple[PxPoint, ...], ...],
+    cm_per_px: float,
+    room_kinds: Mapping[int, RoomKind] | None = None,
+) -> Plan:
+    """`room_kinds` maps room indices to kinds; unlisted rooms are "other"."""
     def cm(value: float) -> float:
         return round(value * cm_per_px, DECIMALS)
 
@@ -62,6 +69,7 @@ def build_plan(walls: list[PxWall], rooms: tuple[tuple[PxPoint, ...], ...], cm_p
             end=point(w.end),
             thickness=max(cm(w.thickness), 1.0),
             exterior=w.exterior,
+            **({"height": w.height_cm} if w.height_cm is not None else {}),
         )
         plan_walls.append(wall)
         for o in w.openings:
@@ -71,5 +79,9 @@ def build_plan(walls: list[PxWall], rooms: tuple[tuple[PxPoint, ...], ...], cm_p
             if opening.offset - opening.width / 2 >= 0 and opening.offset + opening.width / 2 <= wall.length:
                 plan_openings.append(opening)
 
-    plan_rooms = [Room(id=f"r{i}", polygon=[point(p) for p in poly]) for i, poly in enumerate(rooms, start=1)]
+    kinds = room_kinds or {}
+    plan_rooms = [
+        Room(id=f"r{i + 1}", polygon=[point(p) for p in poly], kind=kinds.get(i, "other"))
+        for i, poly in enumerate(rooms)
+    ]
     return Plan(walls=plan_walls, openings=plan_openings, rooms=plan_rooms)
