@@ -15,6 +15,7 @@ from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, 
 from blueprint3d.parsing.errors import ParseError
 from blueprint3d.parsing.geometry import PxOpening, PxWall, WallRun
 from blueprint3d.parsing.image_io import MAX_SIDE_PX, binarize, decode_image, line_ink
+from blueprint3d.parsing.merge import merge_parallel_walls
 from blueprint3d.parsing.openings import classify_gap, merge_collinear
 from blueprint3d.parsing.plan_builder import build_plan, mark_exterior, windows_facing_outside
 from blueprint3d.parsing.result import ParseMeta, ParseResult
@@ -39,6 +40,8 @@ MIN_BOUNDARY_PIECE_CM = 40.0
 MIN_DOOR_CM = 55.0
 MAX_DOOR_CM = 200.0
 PROBE_REACH_FACTOR = 3.0
+MAX_WALL_FACE_GAP_CM = 45.0
+"""Parallel walls closer than this are taken as the two faces of one (outlined) wall."""
 """How far (in max wall thicknesses) to look beyond a room outline for what bounds it."""
 
 
@@ -98,7 +101,8 @@ class OpenCvParser:
             _boundary_config(stats, scale.cm_per_px),
         )
         kinds: dict[int, RoomKind] = dict.fromkeys(completion.balconies, "balcony")
-        plan = build_plan([*walls, *completion.walls], regions.polygons, scale.cm_per_px, kinds)
+        merged = merge_parallel_walls([*walls, *completion.walls], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
+        plan = build_plan(merged, regions.polygons, scale.cm_per_px, kinds)
 
         width, height = decoded.original_size
         meta = ParseMeta(

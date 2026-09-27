@@ -37,7 +37,8 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
      - **A room with 25% or more of its outline facing outside** (measured against its convex hull) is a `balcony`. All its outside stretches become railings (5 cm thick, half height), even when drawn as double lines.
      - **Any other room, outside behind 2+ parallel lines:** an exterior wall with a window. This covers angled walls. A single line (e.g. a door leaf drawn outside) is left alone.
      - **Another room across thin lines:** a wall with a door along the chord.
-  8. Convert to a cm `Plan` (`plan_builder.py`).
+  8. Merge parallel walls of the same height that overlap and lie within 45 cm of each other into one wall spanning both faces (`merge.py`). This handles outlined (double-line) walls and duplicates from step 7.
+  9. Convert to a cm `Plan` (`plan_builder.py`).
 - **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). For example, scanned plans with hatched double-line walls. Remove the entry once a style is supported.
 - **Evaluation harness** (`src/blueprint3d/evaluation/`): run `uv run python -m blueprint3d.evaluation` after every parser change.
   - It parses each image in `data/` and scores it against `data/truth.json`: scale error, room and balcony counts, and living-area error against the printed area. Living area follows the printed Swedish BOA definition (SS 21054): inside the exterior walls, interior walls included, balconies excluded.
