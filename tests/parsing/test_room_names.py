@@ -47,6 +47,20 @@ def test_misread_names_fall_back_to_the_closest_word(misread, name, kind):
     assert match_label(misread) == RoomLabel(name=name, kind=kind)
 
 
+@pytest.mark.parametrize(
+    ("abbreviated", "name", "kind"),
+    [
+        ("VARD.R", "Vardagsrum", "living_room"),
+        ("VARD.RUM", "Vardagsrum", "living_room"),
+        ("SOVR.", "Sovrum", "bedroom"),
+        ("SOV R.", "Sovrum", "bedroom"),
+        ("BALK.", "Balkong", "balcony"),
+    ],
+)
+def test_abbreviated_names_are_spelled_out(abbreviated, name, kind):
+    assert match_label(abbreviated) == RoomLabel(name=name, kind=kind)
+
+
 @pytest.mark.parametrize("marker", ["G", "g", "L", "S", "ST", "K", "F", "DM", "HS", "KYL", "(DM)", "6.", "网"])
 def test_cupboard_and_appliance_markers_are_not_room_names(marker):
     assert match_label(marker) is None

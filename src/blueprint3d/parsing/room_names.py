@@ -36,6 +36,9 @@ VOCABULARY: dict[str, RoomKind] = {
 }  # fmt: skip
 """Words that name a room, printed spelling -> kind. "rum"/"room" only complete other words."""
 
+ABBREVIATIONS = {"vardr": "vardagsrum", "vardrum": "vardagsrum", "sovr": "sovrum", "balk": "balkong"}
+"""Common plan abbreviations (VARD.R, VARD.RUM, SOVR., BALK.), dots removed -> the word they stand for."""
+
 KIND_PRIORITY: tuple[RoomKind, ...] = (
     "living_room", "kitchen", "bedroom", "bathroom", "hallway", "closet", "balcony", "other"
 )  # fmt: skip
@@ -49,6 +52,8 @@ MIN_SIMILARITY = 0.65
 similar. Shorter ones must match exactly: cupboard markers (G, L, ST, KYL) are short too."""
 _LOOKALIKES = str.maketrans("015", "ols")
 _TOKEN = re.compile(r"[^\W_]+")
+_ABBREVIATION_DOT = re.compile(r"(?<=[^\W\d_])\.(?=[^\W\d_])")
+"""A dot between letters, as in VARD.RUM: removed, so the abbreviation reads as one word."""
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,8 @@ def _closest_word(token: str) -> tuple[str, bool] | None:
     if token.lower() in VOCABULARY:
         return token.lower(), True
     plain = _plain(token)
+    if plain in ABBREVIATIONS:
+        return ABBREVIATIONS[plain], False
     if plain in _PLAIN_VOCABULARY:
         return _PLAIN_VOCABULARY[plain], False
     if len(plain) < MIN_FUZZY_LENGTH:
@@ -84,7 +91,7 @@ def _closest_word(token: str) -> tuple[str, bool] | None:
 def match_label(text: str) -> RoomLabel | None:
     """A room label if every word of `text` names a room (numbers such as "Sovrum 2" allowed).
     Labels printed as-is keep their spelling; misread ones take the vocabulary's."""
-    tokens = _TOKEN.findall(text)
+    tokens = _join_stray_letters(_TOKEN.findall(_ABBREVIATION_DOT.sub("", text)))
     words = [t for t in tokens if not t.isdigit()]
     matches = [_closest_word(w) for w in words]
     if not words or any(m is None for m in matches):
@@ -96,6 +103,17 @@ def match_label(text: str) -> RoomLabel | None:
         return RoomLabel(name=text.strip().capitalize(), kind=kind)
     numbers = [t for t in tokens if t.isdigit()]
     return RoomLabel(name=" ".join([*(word for word, _ in found), *numbers]).capitalize(), kind=kind)
+
+
+def _join_stray_letters(tokens: list[str]) -> list[str]:
+    """A single letter belongs to the word before it: OCR reads "SOVR." as "SOV R." at times."""
+    joined: list[str] = []
+    for token in tokens:
+        if len(token) == 1 and token.isalpha() and joined and not joined[-1].isdigit():
+            joined[-1] += token
+        else:
+            joined.append(token)
+    return joined
 
 
 def label_rooms(
