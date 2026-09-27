@@ -8,7 +8,8 @@ interface ViewControlsProps {
 
 export function ViewControls({ cutHeight, maxHeight, showLabels, onCutHeightChange, onShowLabelsChange }: ViewControlsProps) {
   return (
-    <section className="view-controls">
+    <section className="panel-section">
+      <h2>View</h2>
       <label className="field">
         <span>
           Wall cut <output>{cutHeight >= maxHeight ? 'full height' : `${cutHeight} cm`}</output>

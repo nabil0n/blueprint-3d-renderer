@@ -20,10 +20,10 @@ export function ParserPicker({ options, selected, busy, onChange }: ParserPicker
   const unavailable = options.filter((o) => !o.available)
 
   return (
-    <section className="parser-picker">
+    <section className="field">
       <label className="field">
         <span>Parser</span>
-        <select value={current.name} disabled={busy} onChange={(e) => onChange(e.target.value)}>
+        <select className="input" value={current.name} disabled={busy} onChange={(e) => onChange(e.target.value)}>
           {options.map((o) => (
             <option key={o.name} value={o.name} disabled={!o.available}>
               {LABELS[o.name] ?? o.name}

@@ -1,4 +1,4 @@
-import { OrbitControls } from '@react-three/drei'
+import { Bounds, OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { planBounds } from '../geometry/polygon'
@@ -40,10 +40,13 @@ export function Dollhouse({ plan, cutHeight, showLabels }: DollhouseProps) {
         shadow-bias={-0.0005}
       />
 
-      <group position={offset}>
-        <Floors plan={plan} showLabels={showLabels} />
-        <Walls plan={plan} cutHeight={cutHeight} />
-      </group>
+      {/* Refits the camera when the canvas resizes, e.g. when the original opens beside it. */}
+      <Bounds fit observe margin={1.1}>
+        <group position={offset}>
+          <Floors plan={plan} showLabels={showLabels} />
+          <Walls plan={plan} cutHeight={cutHeight} />
+        </group>
+      </Bounds>
 
       <mesh rotation-x={-Math.PI / 2} position-y={-0.01} receiveShadow>
         <planeGeometry args={[span * 4, span * 4]} />

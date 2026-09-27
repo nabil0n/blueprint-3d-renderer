@@ -12,6 +12,8 @@ interface ControlPanelProps {
   readonly view: ComponentProps<typeof ViewControls>
   readonly backendStatus: BackendStatus
   readonly parsers: readonly ParserOption[]
+  readonly comparing: boolean
+  readonly onToggleOriginal: () => void
 }
 
 const STATUS_TEXT: Record<BackendStatus, string> = {
@@ -20,7 +22,7 @@ const STATUS_TEXT: Record<BackendStatus, string> = {
   offline: 'Backend offline',
 }
 
-export function ControlPanel({ source, view, backendStatus, parsers }: ControlPanelProps) {
+export function ControlPanel({ source, view, backendStatus, parsers, comparing, onToggleOriginal }: ControlPanelProps) {
   return (
     <aside className="panel">
       <header>
@@ -30,17 +32,26 @@ export function ControlPanel({ source, view, backendStatus, parsers }: ControlPa
         </p>
       </header>
 
-      <ParserPicker options={parsers} selected={source.parser} busy={source.busy} onChange={source.chooseParser} />
-
-      <SourcePicker
-        busy={source.busy}
-        error={source.error}
-        onImageSelected={source.uploadImage}
-        onJsonSelected={source.loadJson}
-      />
+      <section className="panel-section">
+        <h2>Plan</h2>
+        <ParserPicker options={parsers} selected={source.parser} busy={source.busy} onChange={source.chooseParser} />
+        <SourcePicker
+          busy={source.busy}
+          error={source.error}
+          onImageSelected={source.uploadImage}
+          onJsonSelected={source.loadJson}
+        />
+      </section>
 
       {source.image && source.meta && (
-        <ImageSummary image={source.image} meta={source.meta} busy={source.busy} onRescale={source.reparse} />
+        <ImageSummary
+          image={source.image}
+          meta={source.meta}
+          busy={source.busy}
+          comparing={comparing}
+          onRescale={source.reparse}
+          onToggleOriginal={onToggleOriginal}
+        />
       )}
 
       <ViewControls {...view} />
