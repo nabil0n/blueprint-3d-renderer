@@ -88,6 +88,18 @@ def draw_bay_and_balcony_plan() -> np.ndarray:
     return img
 
 
+def draw_decorated_plan() -> np.ndarray:
+    """The two-room plan dressed like a modern rental export: a thick dark-green logo just above it,
+    the east room filled light blue (like a bathroom), and a balcony outlined in light gray."""
+    img = draw_two_room_plan()
+    img = np.vstack([blank(1000, 120), img, blank(1000, 150)])  # room for logo and balcony
+    cv2.putText(img, "LOGO", (120, 170), cv2.FONT_HERSHEY_SIMPLEX, 2.4, (70, 90, 20), 16)
+    cv2.rectangle(img, (506, 240), (879, 799), (240, 225, 200), -1)  # BGR light blue fill
+    cv2.rectangle(img, (300, 820), (600, 940), (160, 160, 160), 2)
+    cv2.rectangle(img, (400, 800), (400 + DOOR_PX - 1, 819), WHITE, -1)  # balcony door in the south wall
+    return img
+
+
 def draw_tick_scale_bar(
     img: np.ndarray, x0: int, y: int, px_per_m: float, metres: int = 5, ink: int = 0
 ) -> None:

@@ -14,7 +14,7 @@ import numpy as np
 from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask
 from blueprint3d.parsing.errors import ParseError
 from blueprint3d.parsing.geometry import PxOpening, PxWall, WallRun
-from blueprint3d.parsing.image_io import MAX_SIDE_PX, binarize, decode_image
+from blueprint3d.parsing.image_io import MAX_SIDE_PX, binarize, decode_image, line_ink
 from blueprint3d.parsing.openings import classify_gap, merge_collinear
 from blueprint3d.parsing.plan_builder import build_plan, mark_exterior, windows_facing_outside
 from blueprint3d.parsing.result import ParseMeta, ParseResult
@@ -34,8 +34,6 @@ MAX_GAP_FACTOR = 8.0
 MIN_ROOM_M2 = 1.0
 MIN_ROOM_HALF_WIDTH_CM = 35.0
 GAP_PLUG_MARGIN_PX = 2
-LIGHT_INK_LEVEL = 230
-"""Gray levels below this count as ink when looking for thin details (windows are often light gray)."""
 RAILING_THICKNESS_CM = 5.0
 MIN_BOUNDARY_PIECE_CM = 40.0
 MIN_DOOR_CM = 55.0
@@ -121,10 +119,10 @@ def _locate_plan(gray: np.ndarray) -> _PlanArea:
     page text (bold headings, legends) would otherwise skew the thin/thick split."""
     binary = binarize(gray)
     rough = extract_wall_mask(binary)
-    x0, y0, x1, y1 = expand_to_ink(crop_box(rough.mask, rough.min_thickness), binary, rough.mask)
+    page_ink = line_ink(gray, binary)
+    x0, y0, x1, y1 = expand_to_ink(crop_box(rough.mask, rough.min_thickness), page_ink, rough.mask)
     plan_binary = binary[y0:y1, x0:x1]
     walls = extract_wall_mask(plan_binary)
-    page_ink = np.where(gray < LIGHT_INK_LEVEL, 255, 0).astype(np.uint8)
     return _PlanArea(
         ink=page_ink[y0:y1, x0:x1],
         wall_mask=walls.mask,

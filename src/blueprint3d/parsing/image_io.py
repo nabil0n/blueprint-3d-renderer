@@ -8,6 +8,16 @@ import numpy as np
 from blueprint3d.parsing.errors import ParseError
 
 MAX_SIDE_PX = 2500
+COLOUR_CHROMA = 40
+"""Pixels whose channels spread more than this are coloured (logos, fills) and treated as paper;
+plan lines are black or gray. Near-black JPEG noise stays well below it."""
+LINE_CONTRAST = 30
+"""How much darker than its immediate surroundings a pixel must be to count as a drawn line."""
+LINE_KERNEL_PX = 9
+LIGHT_INK_LEVEL = 230
+"""Gray levels below this count as (light) ink."""
+FILL_KERNEL_PX = 15
+"""Light areas at least this wide in every direction are fills, not lines."""
 
 
 @dataclass(frozen=True)
@@ -43,12 +53,27 @@ def _to_gray(image: np.ndarray) -> np.ndarray:
     if image.shape[2] == 4:
         # Composite onto white so transparent backgrounds do not turn black.
         alpha = image[:, :, 3:4].astype(np.float32) / 255
-        rgb = image[:, :, :3].astype(np.float32) * alpha + 255 * (1 - alpha)
-        return cv2.cvtColor(rgb.astype(np.uint8), cv2.COLOR_BGR2GRAY)
-    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        image = (image[:, :, :3].astype(np.float32) * alpha + 255 * (1 - alpha)).astype(np.uint8)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    chroma = image.max(axis=2).astype(np.int16) - image.min(axis=2)
+    return np.where(chroma > COLOUR_CHROMA, 255, gray).astype(np.uint8)
 
 
 def binarize(gray: np.ndarray) -> np.ndarray:
     """Otsu threshold; returns dark (ink) pixels as 255 and background as 0."""
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
     return binary
+
+
+def line_ink(gray: np.ndarray, dark: np.ndarray) -> np.ndarray:
+    """Dark ink plus light gray lines, without flat room fills, as 255.
+
+    Light pixels count as ink unless they belong to a large uniform light area (a fill such as a
+    gray balcony or light blue bathroom). Lines drawn *inside* a fill are recovered with a black-hat
+    filter, which finds strokes darker than their immediate surroundings.
+    """
+    light = (gray < LIGHT_INK_LEVEL) & (dark == 0)
+    fill = cv2.morphologyEx(light.astype(np.uint8), cv2.MORPH_OPEN, np.ones((FILL_KERNEL_PX, FILL_KERNEL_PX), np.uint8))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (LINE_KERNEL_PX, LINE_KERNEL_PX))
+    in_fill_lines = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel) > LINE_CONTRAST
+    return np.where((dark > 0) | (light & (fill == 0)) | in_fill_lines, 255, 0).astype(np.uint8)

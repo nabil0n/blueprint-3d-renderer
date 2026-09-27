@@ -10,6 +10,7 @@ from tests.parsing.synthetic import (
     TRUE_CM_PER_PX,
     blank,
     draw_bay_and_balcony_plan,
+    draw_decorated_plan,
     draw_tick_scale_bar,
     draw_two_room_plan,
     encode_png,
@@ -107,6 +108,23 @@ def test_balcony_gets_half_height_railings(bay_result):
 
 def test_rooms_with_ordinary_walls_are_not_balconies(bay_result):
     assert sorted(r.kind for r in bay_result.plan.rooms) == ["balcony", "other", "other"]
+
+
+@pytest.fixture(scope="module")
+def decorated_result():
+    return OpenCvParser().parse(encode_png(draw_decorated_plan()), cm_per_px=TRUE_CM_PER_PX)
+
+
+def test_coloured_logos_are_not_walls(decorated_result):
+    """The logo spans y 100-175 px in the image; the plan's north wall is at y 220-239."""
+    oy = decorated_result.meta.origin_px[1]
+    tops = [oy + min(w.start.y, w.end.y) / TRUE_CM_PER_PX for w in decorated_result.plan.walls]
+    assert min(tops) > 200
+
+
+def test_flat_room_fills_do_not_hide_rooms(decorated_result):
+    kinds = sorted(r.kind for r in decorated_result.plan.rooms)
+    assert kinds == ["balcony", "other", "other"]
 
 
 def test_a_printed_scale_bar_sets_the_scale():
