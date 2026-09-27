@@ -49,6 +49,8 @@ class _PlanArea:
     """Any ink including light gray lines, 255 = ink."""
     wall_mask: np.ndarray
     min_thickness: int
+    origin: tuple[int, int]
+    """Top-left of the plan area in the working image."""
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,7 @@ class OpenCvParser:
             scale_detail=scale.detail,
             image_width=width,
             image_height=height,
+            origin_px=(area.origin[0] / decoded.resize_factor, area.origin[1] / decoded.resize_factor),
             warnings=_warnings(scale, len(plan.rooms)),
         )
         return ParseResult(plan=plan, meta=meta)
@@ -111,7 +114,7 @@ def _locate_plan(gray: np.ndarray) -> _PlanArea:
     plan_binary = binary[y0:y1, x0:x1]
     walls = extract_wall_mask(plan_binary)
     ink = np.where(gray[y0:y1, x0:x1] < LIGHT_INK_LEVEL, 255, 0).astype(np.uint8)
-    return _PlanArea(ink=ink, wall_mask=walls.mask, min_thickness=walls.min_thickness)
+    return _PlanArea(ink=ink, wall_mask=walls.mask, min_thickness=walls.min_thickness, origin=(x0, y0))
 
 
 def _run_to_wall(run: WallRun, binary: np.ndarray) -> PxWall | None:

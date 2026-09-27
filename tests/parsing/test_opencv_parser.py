@@ -108,6 +108,17 @@ def test_rooms_with_ordinary_walls_are_not_balconies(bay_result):
     assert sorted(r.kind for r in bay_result.plan.rooms) == ["balcony", "other", "other"]
 
 
+def test_origin_maps_plan_coordinates_back_onto_the_image():
+    """Plan (x, y) in cm -> image pixels: origin_px + (x, y) / cm_per_px, in original image pixels."""
+    img = draw_two_room_plan()
+    result = OpenCvParser(max_side=500).parse(encode_png(img), cm_per_px=2.0)
+    ox, oy = result.meta.origin_px
+    north = min(result.plan.walls, key=lambda w: w.start.y + w.end.y)
+    # The north wall's centre line is at y = 109.5 in the original image.
+    assert oy + north.start.y / 2.0 == pytest.approx(109.5, abs=3)
+    assert 0 <= ox < 100
+
+
 def test_user_scale_is_in_original_image_pixels():
     img = draw_two_room_plan()
     result = OpenCvParser(max_side=500).parse(encode_png(img), cm_per_px=2.0)
