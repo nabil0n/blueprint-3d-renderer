@@ -97,6 +97,20 @@ def test_crop_box_ignores_a_bold_title_heavier_than_the_walls():
     assert y1 < 500, "the title has no long straight strokes and stays out"
 
 
+def test_crop_box_ignores_a_scale_bar_and_a_scan_border_heavier_than_the_walls():
+    plan = cv2.resize(draw_two_room_plan(), (500, 400), interpolation=cv2.INTER_AREA)
+    img = blank(1000, 900)
+    img[100:500, 250:750] = plan
+    cv2.rectangle(img, (100, 700), (900, 730), BLACK, -1)  # a solid scale bar, long and thick
+    cv2.rectangle(img, (0, 870), (999, 899), BLACK, -1)  # a black scan border along the page edge
+    walls = extract_wall_mask(to_binary(img), partitions=False)
+    box = crop_box(walls.mask, walls.min_thickness)
+    assert box is not None
+    x0, y0, x1, y1 = box
+    assert x0 < 300 and y0 < 150 and x1 > 700 and y1 > 450
+    assert y1 < 650, "straight strokes running one way only are not a plan"
+
+
 def test_crop_box_finds_nothing_when_no_cluster_has_a_long_straight_wall():
     walls = extract_wall_mask(to_binary(draw_hatched_plan_with_bold_title()), partitions=False)
     assert crop_box(walls.mask, walls.min_thickness) is None
