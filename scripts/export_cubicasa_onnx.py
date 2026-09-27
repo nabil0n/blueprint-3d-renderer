@@ -120,7 +120,8 @@ def write_manifest() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    formatter = argparse.RawDescriptionHelpFormatter
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=formatter)
     parser.add_argument("--check", type=Path, help="a plan image to compare PyTorch and ONNX outputs on")
     args = parser.parse_args()
     if not WEIGHTS_FILE.is_file() or not VENDOR_DIR.is_dir():

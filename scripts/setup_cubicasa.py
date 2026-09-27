@@ -83,7 +83,8 @@ def fetch_dataset() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    formatter = argparse.RawDescriptionHelpFormatter
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=formatter)
     parser.add_argument("--dataset", action="store_true", help="also fetch the 5.5 GB training dataset")
     args = parser.parse_args()
     fetch_code()

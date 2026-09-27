@@ -9,7 +9,8 @@ def test_printed_labels_name_rooms_and_set_their_kind():
 
 
 def test_a_printed_label_beats_a_guessed_kind():
-    kinds, _ = room_kinds_and_names((RoomLabel("Sovrum", "bedroom"), None), guessed={0: "kitchen", 1: "bathroom"})
+    labels = (RoomLabel("Sovrum", "bedroom"), None)
+    kinds, _ = room_kinds_and_names(labels, guessed={0: "kitchen", 1: "bathroom"})
     assert kinds == {0: "bedroom", 1: "bathroom"}
 
 
