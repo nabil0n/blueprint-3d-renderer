@@ -74,3 +74,12 @@ def test_colour_input_is_accepted(model_dir):
     image = np.full((64, 64, 3), 255, np.uint8)
     cv2.rectangle(image, (10, 10), (50, 20), (0, 0, 0), -1)
     assert CubiCasaModel(model_dir).segment(image).room_mask("Wall")[15, 30]
+
+
+def test_averaging_over_rotations_keeps_the_classes_in_place(model_dir):
+    gray = np.full((70, 90), 255, np.uint8)
+    gray[20:30, 10:80] = 0
+    seg = CubiCasaModel(model_dir).segment(gray, rotations=4)
+    assert seg.rooms.shape == (70, 90)
+    assert seg.room_mask("Wall")[25, 40] and not seg.room_mask("Wall")[50, 40]
+    assert seg.room_mask("Wall")[20:30, 10:80].all()

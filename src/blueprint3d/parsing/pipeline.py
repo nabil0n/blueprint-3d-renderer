@@ -6,15 +6,31 @@ from typing import Protocol
 
 import numpy as np
 
+from blueprint3d.parsing.boundaries import BoundaryConfig
 from blueprint3d.parsing.geometry import PxPoint
-from blueprint3d.parsing.image_io import binarize, line_ink
+from blueprint3d.parsing.image_io import DecodedImage, binarize, line_ink
 from blueprint3d.parsing.ocr import TextReader
-from blueprint3d.parsing.result import ParseResult
+from blueprint3d.parsing.result import ParseMeta, ParseResult
 from blueprint3d.parsing.room_names import RoomLabel, label_rooms
 from blueprint3d.parsing.scale import ScaleEstimate
 from blueprint3d.parsing.scale_bar import ScaleBar, detect_scale_bar
-from blueprint3d.parsing.walls import crop_box, expand_to_ink, extract_wall_mask, fill_hatching, ink_box
-from blueprint3d.schema import RoomKind
+from blueprint3d.parsing.walls import (
+    ThicknessStats,
+    crop_box,
+    expand_to_ink,
+    extract_wall_mask,
+    fill_hatching,
+    ink_box,
+)
+from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM, RoomKind
+
+
+RAILING_THICKNESS_CM = 5.0
+MIN_BOUNDARY_PIECE_CM = 40.0
+MIN_DOOR_CM = 55.0
+MAX_DOOR_CM = 200.0
+PROBE_REACH_FACTOR = 3.0
+"""How far (in max wall thicknesses) to look beyond a room outline for what bounds it."""
 
 
 class Parser(Protocol):
@@ -95,6 +111,42 @@ def room_kinds_and_names(
     kinds = {**(guessed or {}), **{i: label.kind for i, label in named.items()}}
     kinds.update(dict.fromkeys(balconies, "balcony"))
     return kinds, {i: label.name for i, label in named.items()}
+
+
+def parse_meta(
+    parser: str,
+    decoded: DecodedImage,
+    area: PlanArea,
+    scale: ScaleEstimate,
+    user_cm_per_px: float | None,
+    warnings: list[str],
+) -> ParseMeta:
+    """Metadata in the uploaded image's pixels (the working image may have been downscaled)."""
+    width, height = decoded.original_size
+    factor = decoded.resize_factor
+    return ParseMeta(
+        parser=parser,
+        cm_per_px=user_cm_per_px if user_cm_per_px is not None else scale.cm_per_px * factor,
+        scale_source=scale.source,
+        scale_detail=scale.detail,
+        image_width=width,
+        image_height=height,
+        origin_px=(area.box[0] / factor, area.box[1] / factor),
+        warnings=warnings,
+    )
+
+
+def boundary_config(stats: ThicknessStats, cm_per_px: float) -> BoundaryConfig:
+    """How room outlines no wall explains are completed (balcony railings, angled glazing, doors)."""
+    return BoundaryConfig(
+        wall_thickness=stats.maximum,
+        door_wall_thickness=stats.typical,
+        railing_thickness=RAILING_THICKNESS_CM / cm_per_px,
+        railing_height_cm=DEFAULT_WALL_HEIGHT_CM / 2,
+        min_piece=MIN_BOUNDARY_PIECE_CM / cm_per_px,
+        door_range=(MIN_DOOR_CM / cm_per_px, MAX_DOOR_CM / cm_per_px),
+        probe_reach=PROBE_REACH_FACTOR * stats.maximum,
+    )
 
 
 def scale_warnings(scale: ScaleEstimate, room_count: int) -> list[str]:

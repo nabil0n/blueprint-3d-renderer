@@ -46,7 +46,7 @@ class Segmentation:
 
 
 class SegmentationModel(Protocol):
-    def segment(self, image: np.ndarray, scale: float = 1.0) -> Segmentation: ...
+    def segment(self, image: np.ndarray, scale: float = 1.0, rotations: int = 1) -> Segmentation: ...
 
 
 def model_available(model_dir: Path = DEFAULT_MODEL_DIR) -> bool:
@@ -76,26 +76,33 @@ class CubiCasaModel:
         self._room_classes = tuple(manifest["room_classes"])
         self._icon_classes = tuple(manifest["icon_classes"])
 
-    def segment(self, image: np.ndarray, scale: float = 1.0) -> Segmentation:
+    def segment(self, image: np.ndarray, scale: float = 1.0, rotations: int = 1) -> Segmentation:
         """Classes for every pixel of `image` (grayscale or BGR). `scale` resizes the image for the
         network only, e.g. to bring walls to the thickness it was trained on; the result is on the
-        original pixel grid."""
+        original pixel grid. `rotations` (1-4) averages the network's probabilities over that many
+        90-degree turns of the input, as CubiCasa's authors do: steadier, but that many times slower."""
+        if not 1 <= rotations <= 4:
+            raise ValueError("rotations must be between 1 and 4")
         bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR) if image.ndim == 2 else image
         height, width = bgr.shape[:2]
         if scale != 1.0:
             interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
             bgr = cv2.resize(bgr, None, fx=scale, fy=scale, interpolation=interpolation)
-        rooms, icons = self._run(bgr)
+        rooms, icons = self._probabilities(bgr)
+        for turns in range(1, rotations):
+            turned_rooms, turned_icons = self._probabilities(np.ascontiguousarray(np.rot90(bgr, turns)))
+            rooms += np.rot90(turned_rooms, -turns, axes=(1, 2))
+            icons += np.rot90(turned_icons, -turns, axes=(1, 2))
         return Segmentation(
-            rooms=cv2.resize(rooms, (width, height), interpolation=cv2.INTER_NEAREST),
-            icons=cv2.resize(icons, (width, height), interpolation=cv2.INTER_NEAREST),
+            rooms=_classes(rooms, width, height),
+            icons=_classes(icons, width, height),
             room_classes=self._room_classes,
             icon_classes=self._icon_classes,
         )
 
-    def _run(self, bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Argmax class maps at the size of `bgr`. The input is padded to the network's size multiple,
-        RGB, scaled to [-1, 1] as in CubiCasa's own loader."""
+    def _probabilities(self, bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Class probabilities (classes x H x W) at the size of `bgr`. The input is padded to the
+        network's size multiple, RGB, scaled to [-1, 1] as in CubiCasa's own loader."""
         height, width = bgr.shape[:2]
         pad, multiple = self._pad_value, self._multiple
         padded = cv2.copyMakeBorder(
@@ -104,7 +111,10 @@ class CubiCasaModel:
         rgb = cv2.cvtColor(padded, cv2.COLOR_BGR2RGB).astype(np.float32)
         batch = (2 * rgb / 255 - 1).transpose(2, 0, 1)[None]
         rooms, icons = self._session.run(["rooms", "icons"], {"image": batch})
-        return (
-            rooms[0, :, :height, :width].argmax(axis=0).astype(np.uint8),
-            icons[0, :, :height, :width].argmax(axis=0).astype(np.uint8),
-        )
+        return rooms[0, :, :height, :width], icons[0, :, :height, :width]
+
+
+def _classes(probabilities: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Most likely class per pixel, resized (nearest) to the original grid."""
+    classes = probabilities.argmax(axis=0).astype(np.uint8)
+    return cv2.resize(classes, (width, height), interpolation=cv2.INTER_NEAREST)

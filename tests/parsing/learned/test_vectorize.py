@@ -115,3 +115,22 @@ def test_an_angled_wall_is_kept():
 def test_no_walls_is_a_parse_error():
     with pytest.raises(ParseError, match="no walls"):
         vectorize_walls(ClassMap().segmentation())
+
+
+def test_an_interior_wall_stopping_short_of_the_outer_wall_still_separates_rooms():
+    m = two_rooms()
+    m.rooms[60:66, 195:205] = ROOM["Kitchen"]  # the model left a 6 px gap where the walls meet
+    seg = m.segmentation()
+    rooms = vectorize_rooms(seg, vectorize_walls(seg), CM_PER_PX)
+    assert len(rooms.regions.polygons) == 2
+
+
+def test_a_balcony_drawn_with_thin_lines_is_found_in_the_ink():
+    m = two_rooms().icon("Door", 100, 240, 149, 249)
+    m.room("Outdoor", 70, 250, 229, 319)
+    seg = m.segmentation()
+    ink = np.zeros(seg.rooms.shape, np.uint8)
+    cv2.rectangle(ink, (70, 249), (229, 319), 255, 1)  # the balcony outline the model did not mark
+    rooms = vectorize_rooms(seg, vectorize_walls(seg), CM_PER_PX, ink=ink)
+    assert len(rooms.regions.polygons) == 3
+    assert rooms.balconies, "the model's Outdoor class makes it a balcony"

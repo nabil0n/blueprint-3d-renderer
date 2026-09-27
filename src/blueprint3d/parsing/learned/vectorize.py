@@ -15,7 +15,7 @@ from blueprint3d.parsing.errors import ParseError
 from blueprint3d.parsing.geometry import Gap, PxWall, WallRun
 from blueprint3d.parsing.learned.segmentation import Segmentation
 from blueprint3d.parsing.openings import OpeningKind, count_line_groups, merge_collinear, run_to_wall
-from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects
+from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes
 from blueprint3d.parsing.segments import extract_axis_segments, extract_diagonal_walls
 from blueprint3d.parsing.walls import ThicknessStats, thickness_stats
 from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM, RoomKind
@@ -36,6 +36,9 @@ ICON_COVERAGE = 0.3
 DIAGONAL_MIN_THICKNESS_SHARE = 0.75
 RAILING_MIN_RUN_FACTOR = 2.0
 """Railing pieces must be at least this many typical wall thicknesses long."""
+JOIN_REACH_FACTOR = 1.0
+"""Walls bound rooms as if extended by this many thicknesses at each end: the model often stops a
+wall a few pixels short of the wall it meets, and rooms would leak through the gap."""
 MIN_KIND_SHARE = 0.4
 """A room takes a class's kind only if that class covers this share of its floor."""
 
@@ -88,18 +91,25 @@ def vectorize_walls(seg: Segmentation) -> WallLayout:
     diagonal = extract_diagonal_walls(solid, segments, DIAGONAL_MIN_THICKNESS_SHARE * stats.typical)
     barrier = cv2.bitwise_or(solid, _mask(seg.room_mask("Railing")))
     walls = (*(w for w in axis_walls if w is not None), *diagonal)
+    for w in walls:
+        _draw_extended(barrier, w, JOIN_REACH_FACTOR * w.thickness)
     return WallLayout(walls=walls, runs=tuple(runs), stats=stats, barrier=barrier)
 
 
-def vectorize_rooms(seg: Segmentation, walls: WallLayout, cm_per_px: float) -> RoomLayout:
-    barrier = walls.barrier.copy()
-    for x0, y0, x1, y1 in gap_rects(list(walls.runs), margin=GAP_PLUG_MARGIN_PX):
-        cv2.rectangle(barrier, (x0, y0), (x1, y1), 255, -1)
-    regions = find_rooms(
-        barrier,
-        min_area_px=MIN_ROOM_M2 * 10_000 / cm_per_px**2,
-        min_inradius_px=MIN_ROOM_HALF_WIDTH_CM / cm_per_px,
-    )
+def vectorize_rooms(
+    seg: Segmentation, walls: WallLayout, cm_per_px: float, ink: np.ndarray | None = None
+) -> RoomLayout:
+    """Rooms enclosed by walls, openings and railings. With `ink` (the drawing's lines, 255 = ink),
+    a second pass also closes spaces bounded by thin lines the model did not mark, such as balcony
+    outlines; those count only where the first pass saw outside space (as in the OpenCV parser)."""
+    limits = {
+        "min_area_px": MIN_ROOM_M2 * 10_000 / cm_per_px**2,
+        "min_inradius_px": MIN_ROOM_HALF_WIDTH_CM / cm_per_px,
+    }
+    regions = find_rooms(_plugged(walls.barrier, walls.runs), **limits)
+    if ink is not None:
+        with_lines = cv2.bitwise_or(walls.barrier, ink)
+        regions = merge_room_passes(regions, find_rooms(_plugged(with_lines, walls.runs), **limits))
     guesses = {i: _guess_kind(seg, polygon) for i, polygon in enumerate(regions.polygons)}
     kinds = {i: kind for i, kind in guesses.items() if kind is not None}
     return RoomLayout(
@@ -108,6 +118,23 @@ def vectorize_rooms(seg: Segmentation, walls: WallLayout, cm_per_px: float) -> R
         balconies=frozenset(i for i, kind in kinds.items() if kind == "balcony"),
         railings=_railings(seg, walls.stats, cm_per_px),
     )
+
+
+def _plugged(barrier: np.ndarray, runs: tuple[WallRun, ...]) -> np.ndarray:
+    plugged = barrier.copy()
+    for x0, y0, x1, y1 in gap_rects(list(runs), margin=GAP_PLUG_MARGIN_PX):
+        cv2.rectangle(plugged, (x0, y0), (x1, y1), 255, -1)
+    return plugged
+
+
+def _draw_extended(mask: np.ndarray, wall: PxWall, reach: float) -> None:
+    start, end = np.array(wall.start), np.array(wall.end)
+    length = float(np.linalg.norm(end - start))
+    if length == 0:
+        return
+    extend = (end - start) / length * (wall.thickness / 2 + reach)
+    p0, p1 = (tuple(int(round(v)) for v in p) for p in (start - extend, end + extend))
+    cv2.line(mask, p0, p1, 255, max(1, round(wall.thickness)))
 
 
 def _mask(flags: np.ndarray) -> np.ndarray:

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask
+from blueprint3d.parsing.boundaries import complete_boundaries, covered_mask
 from blueprint3d.parsing.errors import ParseError
 from blueprint3d.parsing.geometry import PxWall, WallRun
 from blueprint3d.parsing.image_io import MAX_SIDE_PX, decode_image
@@ -21,18 +21,19 @@ from blueprint3d.parsing.openings import classify_gap, merge_collinear, run_to_w
 from blueprint3d.parsing.pipeline import (
     PlanArea,
     best_scale_bar,
+    boundary_config,
     label_rooms_safely,
     locate_plan,
+    parse_meta,
     room_kinds_and_names,
     scale_warnings,
 )
 from blueprint3d.parsing.plan_builder import build_plan, mark_exterior, windows_facing_outside
-from blueprint3d.parsing.result import ParseMeta, ParseResult
+from blueprint3d.parsing.result import ParseResult
 from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes, outside_space
 from blueprint3d.parsing.scale import estimate_scale, page_format_scale
 from blueprint3d.parsing.segments import extract_axis_segments, extract_diagonal_walls
-from blueprint3d.parsing.walls import ThicknessStats, thickness_stats
-from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM
+from blueprint3d.parsing.walls import thickness_stats
 
 MIN_RUN_FACTOR = 1.1
 MIN_RUN_EXTRA_PX = 2
@@ -43,12 +44,6 @@ MAX_GAP_FACTOR = 8.0
 MIN_ROOM_M2 = 1.0
 MIN_ROOM_HALF_WIDTH_CM = 35.0
 GAP_PLUG_MARGIN_PX = 2
-RAILING_THICKNESS_CM = 5.0
-MIN_BOUNDARY_PIECE_CM = 40.0
-MIN_DOOR_CM = 55.0
-MAX_DOOR_CM = 200.0
-PROBE_REACH_FACTOR = 3.0
-"""How far (in max wall thicknesses) to look beyond a room outline for what bounds it."""
 MAX_WALL_FACE_GAP_CM = 45.0
 """Parallel walls closer than this are taken as the two faces of one (outlined) wall."""
 
@@ -93,7 +88,7 @@ class OpenCvParser:
             covered_mask(area.wall_mask, found_walls),
             regions.contours,
             regions.outside_drawing,
-            _boundary_config(stats, scale.cm_per_px),
+            boundary_config(stats, scale.cm_per_px),
         )
         outside = outside_space(regions, completion.balconies)
         walls = [windows_facing_outside(mark_exterior(w, outside), outside) for w in found_walls]
@@ -102,17 +97,8 @@ class OpenCvParser:
         merged = merge_parallel_walls([*walls, *completion.walls], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
         plan = build_plan(merged, regions.polygons, scale.cm_per_px, kinds, names)
 
-        width, height = decoded.original_size
-        meta = ParseMeta(
-            parser=self.name,
-            cm_per_px=cm_per_px if cm_per_px is not None else scale.cm_per_px * decoded.resize_factor,
-            scale_source=scale.source,
-            scale_detail=scale.detail,
-            image_width=width,
-            image_height=height,
-            origin_px=(area.box[0] / decoded.resize_factor, area.box[1] / decoded.resize_factor),
-            warnings=[*scale_warnings(scale, len(plan.rooms)), *naming_warning],
-        )
+        warnings = [*scale_warnings(scale, len(plan.rooms)), *naming_warning]
+        meta = parse_meta(self.name, decoded, area, scale, cm_per_px, warnings)
         return ParseResult(plan=plan, meta=meta)
 
 
@@ -135,16 +121,4 @@ def _find_rooms(area: PlanArea, runs: list[WallRun], cm_per_px: float) -> RoomRe
     return merge_room_passes(
         find_rooms(plugged(area.wall_mask), **limits),
         find_rooms(plugged(area.ink), **limits),
-    )
-
-
-def _boundary_config(stats: ThicknessStats, cm_per_px: float) -> BoundaryConfig:
-    return BoundaryConfig(
-        wall_thickness=stats.maximum,
-        door_wall_thickness=stats.typical,
-        railing_thickness=RAILING_THICKNESS_CM / cm_per_px,
-        railing_height_cm=DEFAULT_WALL_HEIGHT_CM / 2,
-        min_piece=MIN_BOUNDARY_PIECE_CM / cm_per_px,
-        door_range=(MIN_DOOR_CM / cm_per_px, MAX_DOOR_CM / cm_per_px),
-        probe_reach=PROBE_REACH_FACTOR * stats.maximum,
     )
