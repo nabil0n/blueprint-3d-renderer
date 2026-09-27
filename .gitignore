@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Blueprint 3D ---
+# Frontend (see also frontend/.gitignore)
+frontend/coverage/
+
+# Real floor plans from rental sites (may be copyrighted); keep them local.
+data/
+samples/

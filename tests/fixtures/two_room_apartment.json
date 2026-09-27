@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "units": "cm",
+  "walls": [
+    { "id": "w1", "start": { "x": 0, "y": 0 }, "end": { "x": 800, "y": 0 }, "exterior": true, "thickness": 25 },
+    { "id": "w2", "start": { "x": 800, "y": 0 }, "end": { "x": 800, "y": 500 }, "exterior": true, "thickness": 25 },
+    { "id": "w3", "start": { "x": 800, "y": 500 }, "end": { "x": 0, "y": 500 }, "exterior": true, "thickness": 25 },
+    { "id": "w4", "start": { "x": 0, "y": 500 }, "end": { "x": 0, "y": 0 }, "exterior": true, "thickness": 25 },
+    { "id": "w5", "start": { "x": 450, "y": 0 }, "end": { "x": 450, "y": 500 }, "thickness": 10 }
+  ],
+  "openings": [
+    { "id": "o1", "wall_id": "w3", "kind": "door", "offset": 600, "width": 90 },
+    { "id": "o2", "wall_id": "w5", "kind": "door", "offset": 250, "width": 80 },
+    { "id": "o3", "wall_id": "w1", "kind": "window", "offset": 200, "width": 150 },
+    { "id": "o4", "wall_id": "w1", "kind": "window", "offset": 620, "width": 120 }
+  ],
+  "rooms": [
+    {
+      "id": "r1",
+      "kind": "living_room",
+      "name": "Living room",
+      "polygon": [{ "x": 0, "y": 0 }, { "x": 450, "y": 0 }, { "x": 450, "y": 500 }, { "x": 0, "y": 500 }]
+    },
+    {
+      "id": "r2",
+      "kind": "bedroom",
+      "name": "Bedroom",
+      "polygon": [{ "x": 450, "y": 0 }, { "x": 800, "y": 0 }, { "x": 800, "y": 500 }, { "x": 450, "y": 500 }]
+    }
+  ]
+}

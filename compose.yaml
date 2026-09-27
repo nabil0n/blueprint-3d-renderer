@@ -1,0 +1,40 @@
+# Development stack: `docker compose up --build`
+#   frontend -> http://localhost:5173   (proxies /api to the backend)
+#   backend  -> http://localhost:8000   (FastAPI docs at /docs)
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    command: uv run --no-sync uvicorn blueprint3d.api:app --host 0.0.0.0 --port 8000 --reload --reload-dir src
+    ports:
+      - "8000:8000"
+    environment:
+      # Bind mounts from a Windows/macOS host do not deliver file events; poll instead.
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./src:/app/src
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_USE_POLLING: "true"
+    volumes:
+      - ./frontend:/app/frontend
+      # Keep the container's Linux node_modules; the host's are built for a different platform.
+      - /app/frontend/node_modules
+      - ./tests/fixtures:/app/tests/fixtures:ro
+    depends_on:
+      backend:
+        condition: service_healthy
