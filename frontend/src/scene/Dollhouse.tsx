@@ -1,10 +1,10 @@
-import { Bounds, OrbitControls } from '@react-three/drei'
+import { Bounds, Grid, OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { planBounds } from '../geometry/polygon'
 import { CM_TO_M } from '../geometry/units'
 import type { Plan } from '../plan/schema'
-import { WALL_COLORS } from './colors'
+import { GROUND_GRID, WALL_COLORS } from './colors'
 import { Floors } from './Floors'
 import { Walls } from './Walls'
 
@@ -27,7 +27,9 @@ export function Dollhouse({ plan, cutHeight, showLabels }: DollhouseProps) {
 
   return (
     <Canvas shadows camera={{ position: [span * 0.7, span * 1.0, span * 1.0], fov: 40 }}>
-      <hemisphereLight args={['#ffffff', '#b9b4aa', 1.4]} />
+      <color attach="background" args={[WALL_COLORS.horizon]} />
+      <fog attach="fog" args={[WALL_COLORS.horizon, span * 2, span * 6]} />
+      <hemisphereLight args={['#ffffff', '#8fa9c8', 1.5]} />
       <directionalLight
         position={[span * 0.4, span, span * 0.6]}
         intensity={1.8}
@@ -49,9 +51,22 @@ export function Dollhouse({ plan, cutHeight, showLabels }: DollhouseProps) {
       </Bounds>
 
       <mesh rotation-x={-Math.PI / 2} position-y={-0.01} receiveShadow>
-        <planeGeometry args={[span * 4, span * 4]} />
+        <planeGeometry args={[span * 20, span * 20]} />
         <meshStandardMaterial color={WALL_COLORS.ground} roughness={1} />
       </mesh>
+      {/* Blueprint grid on the ground: 50 cm cells, 5 m sections. */}
+      <Grid
+        position-y={-0.005}
+        args={[span * 12, span * 12]}
+        cellSize={0.5}
+        cellThickness={0.6}
+        cellColor={GROUND_GRID.cell}
+        sectionSize={5}
+        sectionThickness={1}
+        sectionColor={GROUND_GRID.section}
+        fadeDistance={span * 3}
+        fadeStrength={1.5}
+      />
 
       <OrbitControls makeDefault maxPolarAngle={MAX_POLAR_ANGLE} minDistance={span * 0.3} maxDistance={span * 4} />
     </Canvas>
