@@ -156,10 +156,16 @@ text. They pass a weaker jump test *only if* they also contain a long straight r
 width), which letters never do.
 
 **Where is the plan?** A plan page also has titles, legends, site maps and scale bars.
-The parser clusters the wall pixels. It starts from the biggest cluster and adds nearby clusters
+The parser clusters the wall pixels. It starts from the biggest cluster that contains a long
+straight run (12× the wall thickness; bold headings never have one) and adds nearby clusters
 of substantial size, then grows the box to include thin drawings *physically connected* to the
 walls, such as the balcony outline. Then it recomputes the wall threshold using only the strokes
 inside the box, because page headings would otherwise skew the histogram.
+
+If no cluster has a long run, the walls are probably *hatched*: two thin lines with a stippled
+fill, which never forms a solid stroke. The plan is then the largest connected drawing on the
+page, and a small closing (about 10 cm) fuses the stipple into solid walls before the usual
+threshold runs.
 
 ![Walls in black over faint ink: text, door swings and the thin window lines are not walls](docs/images/3-walls.png)
 
@@ -353,8 +359,8 @@ Contributor and AI-agent conventions are in [CLAUDE.md](CLAUDE.md).
 
 **Not handled yet:**
 
-- **Hatched walls** (stippled fill between two lines) on older scanned plans: no walls are
-  found.
+- **Hatched walls** (stippled fill between two lines) are found, but thin partitions and
+  their doors are not closed, so neighbouring rooms merge.
 - **Room names aren't read**, so every room is "Room" with the same floor colour.
 - **Curved walls** are approximated or missed.
 - **Scale assumptions:** a scale bar is assumed to be marked in whole metres, and an A4 page at
@@ -362,7 +368,7 @@ Contributor and AI-agent conventions are in [CLAUDE.md](CLAUDE.md).
 
 **Next:**
 
-1. **Hatched and outlined walls:** fill between parallel lines before wall detection.
+1. **Hatched and outlined walls:** close door gaps in thin partitions so rooms separate.
 2. **Room names by OCR** (e.g. SOVRUM, KÖK, BAD): room kinds, floor colours, and the printed
    area as a second scale check.
 3. **A learned parser:** a segmentation model trained on

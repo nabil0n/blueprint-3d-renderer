@@ -19,9 +19,7 @@ from tests.parsing.synthetic import (
 
 REPO = Path(__file__).resolve().parents[2]
 REAL_SAMPLES = sorted([*REPO.glob("data/*.jpg"), *REPO.glob("samples/*.jpg"), *REPO.glob("samples/*.png")])
-UNSUPPORTED_STYLES = {
-    "drheymansgata1.jpg": "scanned plan with hatched double-line walls; the parser expects solid walls",
-}
+UNSUPPORTED_STYLES: dict[str, str] = {}
 
 
 def _sample_param(path: Path):

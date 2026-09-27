@@ -21,7 +21,7 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
 - **Parsers** (image to plan) live in `src/blueprint3d/parsing/` and return a `ParseResult` (plan plus meta: scale, scale source, warnings). `POST /api/plans/parse` takes a multipart image and an optional `cm_per_px`, which is always in *original* image pixels. Roadmap: OpenCV baseline (done), then a CubiCasa5K segmentation model with our own raster-to-vector step, then optionally a vision LLM. Keep new parsers comparable on the same samples.
 - **The OpenCV parser** (`opencv_parser.py` orchestrates small single-purpose modules):
   1. Binarize the image.
-  2. Walls are strokes wider than the first jump in the stroke-width histogram (`walls.py`). The plan is located with a rough mask first, then the threshold is recomputed inside the plan only, because page text skews it.
+  2. Walls are strokes wider than the first jump in the stroke-width histogram (`walls.py`). The plan is located with a rough mask first, then the threshold is recomputed inside the plan only, because page text skews it. Only a wall cluster with a straight run of 12x the wall thickness can seed the plan; bold headings stay below 8x. If none qualifies, the walls are hatched: the plan is the largest ink component, and its hatching is closed into solid walls (`fill_hatching`).
   3. Extract horizontal/vertical wall pieces (`segments.py`), plus a fallback for angled walls.
   4. Merge collinear pieces; the gaps between them are openings (`openings.py`). An opening is a window if it contains 2 or more *solid* lines along the wall, checked on light-gray ink, and faces outside space. Dashed lines mean an open passage.
   5. Scale (`scale.py`), in priority order:
@@ -39,7 +39,7 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
      - **Another room across thin lines:** a wall with a door along the chord.
   8. Merge parallel walls of the same height that overlap and lie within 45 cm of each other into one wall spanning both faces (`merge.py`). This handles outlined (double-line) walls and duplicates from step 7.
   9. Convert to a cm `Plan` (`plan_builder.py`).
-- **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). For example, scanned plans with hatched double-line walls. Remove the entry once a style is supported.
+- **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). It is empty at the moment. Remove an entry once its style is supported.
 - **Evaluation harness** (`src/blueprint3d/evaluation/`): run `uv run python -m blueprint3d.evaluation` after every parser change.
   - It parses each image in `data/` and scores it against `data/truth.json`: scale error, room and balcony counts, and living-area error against the printed area. Living area follows the printed Swedish BOA definition (SS 21054): inside the exterior walls, interior walls included, balconies excluded.
   - It writes `eval-out/overview.png` (captioned overlays of all plans) plus `report.json`.

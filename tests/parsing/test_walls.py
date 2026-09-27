@@ -3,8 +3,16 @@ import numpy as np
 import pytest
 
 from blueprint3d.parsing.errors import ParseError
-from blueprint3d.parsing.walls import crop_box, expand_to_ink, extract_wall_mask, thickness_stats
-from tests.parsing.synthetic import BLACK, EXTERIOR_PX, INTERIOR_PX, blank, draw_two_room_plan, to_binary
+from blueprint3d.parsing.walls import crop_box, expand_to_ink, extract_wall_mask, fill_hatching, ink_box, thickness_stats
+from tests.parsing.synthetic import (
+    BLACK,
+    EXTERIOR_PX,
+    INTERIOR_PX,
+    blank,
+    draw_hatched_plan_with_bold_title,
+    draw_two_room_plan,
+    to_binary,
+)
 
 
 def test_keeps_thick_walls_and_drops_thin_strokes():
@@ -74,6 +82,42 @@ def test_crop_box_excludes_page_decoration():
     assert x0 < 100 and y0 < 100 and x1 > 900 and y1 > 700
     assert y0 > 60, "title should be outside the crop"
     assert x1 <= 960, "legend icon should be outside the crop"
+
+
+def test_crop_box_ignores_a_bold_title_heavier_than_the_walls():
+    plan = cv2.resize(draw_two_room_plan(), (500, 400), interpolation=cv2.INTER_AREA)
+    img = blank(1000, 900)
+    img[:400, :500] = plan
+    cv2.putText(img, "Obj.nr 5403-0474", (20, 800), cv2.FONT_HERSHEY_SIMPLEX, 3.0, BLACK, 14)
+    walls = extract_wall_mask(to_binary(img), partitions=False)
+    box = crop_box(walls.mask, walls.min_thickness)
+    assert box is not None
+    x0, y0, x1, y1 = box
+    assert x0 < 50 and y0 < 50 and x1 > 450 and y1 > 350
+    assert y1 < 500, "the title has no long straight strokes and stays out"
+
+
+def test_crop_box_finds_nothing_when_no_cluster_has_a_long_straight_wall():
+    walls = extract_wall_mask(to_binary(draw_hatched_plan_with_bold_title()), partitions=False)
+    assert crop_box(walls.mask, walls.min_thickness) is None
+
+
+def test_ink_box_finds_the_largest_drawing_on_the_page():
+    img = draw_hatched_plan_with_bold_title()
+    cv2.rectangle(img, (2, 2), (997, 1097), BLACK, 1)  # a page frame is not the plan
+    x0, y0, x1, y1 = ink_box(to_binary(img))
+    assert x0 <= 100 and y0 <= 100 and x1 >= 900 and y1 >= 700
+    assert x0 > 2 and y1 < 850
+
+
+def test_fill_hatching_turns_hatched_walls_into_solid_ones():
+    binary = to_binary(draw_hatched_plan_with_bold_title())
+    x0, y0, x1, y1 = ink_box(binary)
+    walls = extract_wall_mask(fill_hatching(binary[y0:y1, x0:x1]))
+    at = lambda x, y: walls.mask[y - y0, x - x0]  # noqa: E731
+    assert at(500, 110) and at(110, 400) and at(500, 250), "exterior and interior walls are solid"
+    assert not at(300, 400) and not at(500, 408), "rooms and the door gap stay open"
+    assert crop_box(walls.mask, walls.min_thickness) is not None
 
 
 def test_expand_to_ink_includes_thin_outlines_attached_to_the_plan():

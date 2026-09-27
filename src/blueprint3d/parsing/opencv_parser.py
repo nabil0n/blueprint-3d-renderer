@@ -23,7 +23,15 @@ from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_
 from blueprint3d.parsing.scale import ScaleEstimate, estimate_scale, page_format_scale
 from blueprint3d.parsing.scale_bar import ScaleBar, detect_scale_bar
 from blueprint3d.parsing.segments import extract_axis_segments, extract_diagonal_walls
-from blueprint3d.parsing.walls import ThicknessStats, crop_box, expand_to_ink, extract_wall_mask, thickness_stats
+from blueprint3d.parsing.walls import (
+    ThicknessStats,
+    crop_box,
+    expand_to_ink,
+    extract_wall_mask,
+    fill_hatching,
+    ink_box,
+    thickness_stats,
+)
 from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM, RoomKind
 
 MIN_RUN_FACTOR = 1.1
@@ -120,12 +128,19 @@ class OpenCvParser:
 
 def _locate_plan(gray: np.ndarray) -> _PlanArea:
     """Find the plan with a rough wall mask, then re-derive walls from strokes inside it only:
-    page text (bold headings, legends) would otherwise skew the thin/thick split."""
+    page text (bold headings, legends) would otherwise skew the thin/thick split. Without solid
+    walls the plan is taken to be hatched: the largest drawing on the page, with its hatching
+    closed into solid walls."""
     binary = binarize(gray)
     rough = extract_wall_mask(binary, partitions=False)
     page_ink = line_ink(gray, binary)
-    x0, y0, x1, y1 = expand_to_ink(crop_box(rough.mask, rough.min_thickness), page_ink, rough.mask)
-    plan_binary = binary[y0:y1, x0:x1]
+    box = crop_box(rough.mask, rough.min_thickness)
+    if box is not None:
+        x0, y0, x1, y1 = expand_to_ink(box, page_ink, rough.mask)
+        plan_binary = binary[y0:y1, x0:x1]
+    else:
+        x0, y0, x1, y1 = ink_box(binary)
+        plan_binary = fill_hatching(binary[y0:y1, x0:x1])
     walls = extract_wall_mask(plan_binary)
     return _PlanArea(
         ink=page_ink[y0:y1, x0:x1],

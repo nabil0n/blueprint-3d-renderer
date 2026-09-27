@@ -150,3 +150,25 @@ def to_binary(img: np.ndarray) -> np.ndarray:
     """Dark pixels as 255, like the parser's binarisation."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
     return np.where(gray < 128, 255, 0).astype(np.uint8)
+
+
+def draw_hatched_plan_with_bold_title() -> np.ndarray:
+    """Walls drawn as two thin lines with speckle hatching between them (the style of
+    drheymansgata1), and a bold title far below: the title is the only thick ink on the page."""
+    img = blank(1000, 1100)
+    rng = np.random.default_rng(0)
+
+    def hatched(x0: int, y0: int, x1: int, y1: int) -> None:
+        cv2.rectangle(img, (x0, y0), (x1, y1), BLACK, 1)
+        for _ in range((x1 - x0) * (y1 - y0) // 20):
+            x, y = int(rng.integers(x0 + 3, x1 - 3)), int(rng.integers(y0 + 3, y1 - 3))
+            cv2.rectangle(img, (x, y), (x + 2, y + 2), BLACK, -1)
+
+    hatched(100, 100, 899, 119)
+    hatched(100, 680, 899, 699)
+    hatched(100, 119, 119, 680)
+    hatched(880, 119, 899, 680)
+    hatched(494, 119, 505, 380)
+    hatched(494, 437, 505, 680)
+    cv2.putText(img, "Obj.nr 5403", (450, 950), cv2.FONT_HERSHEY_SIMPLEX, 2.4, BLACK, 9)
+    return img

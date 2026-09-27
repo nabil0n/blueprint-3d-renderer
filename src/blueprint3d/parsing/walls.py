@@ -71,11 +71,7 @@ def extract_wall_mask(binary: np.ndarray, partitions: bool = True) -> WallMask:
 def _long_partitions(binary: np.ndarray, kernel_size: int) -> np.ndarray:
     """Strokes at least `kernel_size` wide that belong to a long straight run."""
     thick_enough = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((kernel_size, kernel_size), np.uint8))
-    run = _odd(PARTITION_RUN_FACTOR * kernel_size)
-    long_runs = cv2.bitwise_or(
-        cv2.morphologyEx(thick_enough, cv2.MORPH_OPEN, np.ones((1, run), np.uint8)),
-        cv2.morphologyEx(thick_enough, cv2.MORPH_OPEN, np.ones((run, 1), np.uint8)),
-    )
+    long_runs = _long_runs(thick_enough, PARTITION_RUN_FACTOR * kernel_size)
     # Keep whole strokes that contain a long run, so bends and stubs of a partition come along.
     count, labels = cv2.connectedComponents(thick_enough, connectivity=8)
     keep = np.zeros(count, bool)
@@ -117,14 +113,20 @@ MIN_CLUSTER_SHARE = 0.1
 """A wall cluster joins the plan if it has at least this share of the largest cluster's wall pixels..."""
 MAX_CLUSTER_DISTANCE = 0.25
 """...and lies within this fraction of the plan's size from it."""
+SEED_RUN_FACTOR = 12
+"""The cluster the plan grows from must hold a straight run this many times the wall thickness.
+Real plans have runs of 16x and more; bold headings stay below 8x."""
+FRAME_SHARE = 0.9
+"""Ink spanning this share of the page in both directions is a page frame, not the plan."""
 
 
-def crop_box(wall_mask: np.ndarray, min_thickness: int) -> Box:
-    """Bounding box (x0, y0, x1, y1) of the plan's walls, with a margin.
+def crop_box(wall_mask: np.ndarray, min_thickness: int) -> Box | None:
+    """Bounding box (x0, y0, x1, y1) of the plan's walls, with a margin, or None when no wall
+    cluster has a long straight run (e.g. hatched walls, where only bold text is thick).
 
-    Doors and windows split the walls into several clusters. Starting from the largest, nearby
-    clusters of substantial size are added; titles, legend icons and orientation maps elsewhere
-    on the page are small or far away and stay out.
+    Doors and windows split the walls into several clusters. Starting from the largest one that
+    looks like walls, nearby clusters of substantial size are added; titles, legend icons and
+    orientation maps elsewhere on the page are small, far away or lack long runs and stay out.
     """
     reach = 4 * min_thickness
     count, labels, stats, _ = cv2.connectedComponentsWithStats(cv2.dilate(wall_mask, np.ones((reach, reach), np.uint8)))
@@ -133,9 +135,17 @@ def crop_box(wall_mask: np.ndarray, min_thickness: int) -> Box:
 
     wall_pixels = np.bincount(labels[wall_mask > 0], minlength=count)
     wall_pixels[0] = 0
-    order = [int(i) for i in np.argsort(wall_pixels)[::-1] if wall_pixels[i] > 0]
+    wall_like = np.zeros(count, bool)
+    wall_like[np.unique(labels[_long_runs(wall_mask, SEED_RUN_FACTOR * min_thickness) > 0])] = True
+    order = [int(i) for i in np.argsort(wall_pixels)[::-1] if wall_pixels[i] > 0 and wall_like[i]]
+    if not order:
+        return None
     box = _stat_box(stats[order[0]])
-    candidates = [i for i in order[1:] if wall_pixels[i] >= MIN_CLUSTER_SHARE * wall_pixels[order[0]]]
+    candidates = [
+        int(i)
+        for i in np.argsort(wall_pixels)[::-1]
+        if i != order[0] and wall_pixels[i] >= MIN_CLUSTER_SHARE * wall_pixels[order[0]]
+    ]
 
     grown = True
     while grown:
@@ -151,7 +161,45 @@ def crop_box(wall_mask: np.ndarray, min_thickness: int) -> Box:
     return max(0, x0 - pad), max(0, y0 - pad), min(width, x1 + pad), min(height, y1 + pad)
 
 
+HATCH_CLOSE_SHARE = 0.008
+"""Hatching is closed with a kernel this share of the plan's longer side (about 10 cm at the usual
+rental-plan scale): wide enough to join the speckles, narrow enough to keep door gaps open."""
+
+
+def fill_hatching(binary: np.ndarray) -> np.ndarray:
+    """Close walls drawn as two thin lines with speckle or hatch fill into solid strokes."""
+    size = _odd(round(HATCH_CLOSE_SHARE * max(binary.shape)))
+    return cv2.morphologyEx(binary, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
+
+
 INK_PAD_PX = 3
+
+
+def _long_runs(mask: np.ndarray, length: int) -> np.ndarray:
+    """Pixels of `mask` on a horizontal or vertical run at least `length` long."""
+    run = _odd(length)
+    return cv2.bitwise_or(
+        cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((1, run), np.uint8)),
+        cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((run, 1), np.uint8)),
+    )
+
+
+def ink_box(binary: np.ndarray) -> Box:
+    """Bounding box of the largest connected drawing on the page, for plans whose walls are not
+    solid strokes. Page frames are skipped."""
+    count, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    height, width = binary.shape
+    drawings = [
+        i
+        for i in range(1, count)
+        if not (stats[i, cv2.CC_STAT_WIDTH] >= FRAME_SHARE * width and stats[i, cv2.CC_STAT_HEIGHT] >= FRAME_SHARE * height)
+    ]
+    if not drawings:
+        raise ParseError("No drawing found on the page.")
+    x0, y0, x1, y1 = _stat_box(stats[max(drawings, key=lambda i: stats[i, cv2.CC_STAT_AREA])])
+    pad = INK_PAD_PX
+    return max(0, x0 - pad), max(0, y0 - pad), min(width, x1 + pad), min(height, y1 + pad)
+
 
 
 def expand_to_ink(box: Box, binary: np.ndarray, wall_mask: np.ndarray) -> Box:
