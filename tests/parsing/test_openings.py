@@ -1,7 +1,7 @@
 import numpy as np
 
 from blueprint3d.parsing.geometry import AxisSegment, WallRun
-from blueprint3d.parsing.openings import classify_gap, merge_collinear
+from blueprint3d.parsing.openings import classify_gap, merge_collinear, run_to_wall
 
 
 def seg(start, end, center=110.0, thickness=20.0, axis="h"):
@@ -67,3 +67,21 @@ def test_classifies_vertical_gaps_too():
     for x in (100, 119):
         binary[100:250, x] = 255
     assert classify_gap(binary, run, (100, 250)) == "window"
+
+
+def test_run_to_wall_insets_the_centre_line_and_places_openings():
+    run = WallRun(axis="h", center=50, thickness=10, start=0, end=300, gaps=((100, 180),))
+    wall = run_to_wall(run, [((100, 180), "window"), ((200, 260), "door")])
+    assert wall is not None
+    assert (wall.start, wall.end) == ((5, 50), (295, 50))
+    assert [(o.offset, o.width, o.kind) for o in wall.openings] == [(135, 80, "window"), (225, 60, "door")]
+
+
+def test_run_to_wall_drops_openings_beyond_the_wall_ends():
+    run = WallRun(axis="v", center=20, thickness=10, start=0, end=100)
+    wall = run_to_wall(run, [((0, 30), "door")])
+    assert wall is not None and wall.openings == ()
+
+
+def test_run_shorter_than_its_thickness_is_no_wall():
+    assert run_to_wall(WallRun(axis="h", center=0, thickness=10, start=0, end=10), []) is None

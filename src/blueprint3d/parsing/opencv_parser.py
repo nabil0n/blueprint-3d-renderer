@@ -13,11 +13,11 @@ import numpy as np
 
 from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask
 from blueprint3d.parsing.errors import ParseError
-from blueprint3d.parsing.geometry import PxOpening, PxWall, WallRun
+from blueprint3d.parsing.geometry import PxWall, WallRun
 from blueprint3d.parsing.image_io import MAX_SIDE_PX, decode_image
 from blueprint3d.parsing.merge import merge_parallel_walls
 from blueprint3d.parsing.ocr import TextReader, read_text
-from blueprint3d.parsing.openings import classify_gap, merge_collinear
+from blueprint3d.parsing.openings import classify_gap, merge_collinear, run_to_wall
 from blueprint3d.parsing.pipeline import (
     PlanArea,
     best_scale_bar,
@@ -69,7 +69,7 @@ class OpenCvParser:
         runs = merge_collinear(
             segments, min_gap=MIN_GAP_FACTOR * stats.typical, max_gap=MAX_GAP_FACTOR * stats.typical
         )
-        axis_walls = [w for w in (_run_to_wall(run, area.ink) for run in runs) if w is not None]
+        axis_walls = [w for w in (_classified_wall(run, area.ink) for run in runs) if w is not None]
         diagonal_walls = extract_diagonal_walls(area.wall_mask, segments, area.min_thickness)
         if not axis_walls and not diagonal_walls:
             raise ParseError("No straight walls found in the plan.")
@@ -116,23 +116,9 @@ class OpenCvParser:
         return ParseResult(plan=plan, meta=meta)
 
 
-def _run_to_wall(run: WallRun, binary: np.ndarray) -> PxWall | None:
-    """Wall centre line between the run's ends, inset by half the thickness (the renderer extends
-    walls by the same amount to close corners)."""
-    half = run.thickness / 2
-    a0, a1 = run.start + half, run.end - half
-    if a1 - a0 < 1:
-        return None
-    if run.axis == "h":
-        start, end = (a0, run.center), (a1, run.center)
-    else:
-        start, end = (run.center, a0), (run.center, a1)
-    openings = tuple(
-        PxOpening(offset=(g0 + g1) / 2 - a0, width=g1 - g0, kind=classify_gap(binary, run, (g0, g1)))
-        for g0, g1 in run.gaps
-        if g0 >= a0 and g1 <= a1
-    )
-    return PxWall(start=start, end=end, thickness=run.thickness, openings=openings)
+def _classified_wall(run: WallRun, ink: np.ndarray) -> PxWall | None:
+    """The run's gaps are windows when drawn lines run along them, doors otherwise."""
+    return run_to_wall(run, [(gap, classify_gap(ink, run, gap)) for gap in run.gaps])
 
 
 def _find_rooms(area: PlanArea, runs: list[WallRun], cm_per_px: float) -> RoomRegions:

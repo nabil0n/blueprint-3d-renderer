@@ -1,11 +1,14 @@
 """Joining collinear wall pieces and classifying the gaps between them as doors or windows."""
 
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import Literal
 
 import numpy as np
 
-from blueprint3d.parsing.geometry import AxisSegment, Gap, WallRun
+from blueprint3d.parsing.geometry import AxisSegment, Gap, PxOpening, PxWall, WallRun
+
+OpeningKind = Literal["door", "window"]
 
 MAX_THICKNESS_RATIO = 2.0
 BAND_PAD_PX = 2
@@ -57,7 +60,7 @@ def _extend(run: WallRun, s: AxisSegment, min_gap: float) -> WallRun:
     )
 
 
-def classify_gap(binary: np.ndarray, run: WallRun, gap: Gap) -> Literal["door", "window"]:
+def classify_gap(binary: np.ndarray, run: WallRun, gap: Gap) -> OpeningKind:
     """Windows are drawn as thin lines running along the wall inside the gap; doors leave it empty
     (their leaf and swing arc cross the wall band or sit beside it)."""
     band = _gap_band(binary if run.axis == "h" else binary.T, run, gap)
@@ -79,3 +82,23 @@ def _gap_band(horizontal: np.ndarray, run: WallRun, gap: Gap) -> np.ndarray:
     r0, r1 = max(0, round(run.center - half)), round(run.center + half) + 1
     c0, c1 = round(gap[0]) + EDGE_TRIM_PX, round(gap[1]) - EDGE_TRIM_PX
     return horizontal[r0:r1, c0:c1]
+
+
+def run_to_wall(run: WallRun, openings: Iterable[tuple[Gap, OpeningKind]]) -> PxWall | None:
+    """Wall centre line between the run's ends, inset by half the thickness (the renderer extends
+    walls by the same amount to close corners). `openings` are stretches along the run's axis;
+    those reaching past the inset ends are dropped."""
+    half = run.thickness / 2
+    a0, a1 = run.start + half, run.end - half
+    if a1 - a0 < 1:
+        return None
+    if run.axis == "h":
+        start, end = (a0, run.center), (a1, run.center)
+    else:
+        start, end = (run.center, a0), (run.center, a1)
+    placed = tuple(
+        PxOpening(offset=(g0 + g1) / 2 - a0, width=g1 - g0, kind=kind)
+        for (g0, g1), kind in openings
+        if g0 >= a0 and g1 <= a1
+    )
+    return PxWall(start=start, end=end, thickness=run.thickness, openings=placed)
