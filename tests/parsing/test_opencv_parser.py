@@ -10,6 +10,7 @@ from tests.parsing.synthetic import (
     TRUE_CM_PER_PX,
     blank,
     draw_bay_and_balcony_plan,
+    draw_tick_scale_bar,
     draw_two_room_plan,
     encode_png,
 )
@@ -106,6 +107,28 @@ def test_balcony_gets_half_height_railings(bay_result):
 
 def test_rooms_with_ordinary_walls_are_not_balconies(bay_result):
     assert sorted(r.kind for r in bay_result.plan.rooms) == ["balcony", "other", "other"]
+
+
+def test_a_printed_scale_bar_sets_the_scale():
+    img = np.vstack([draw_two_room_plan(), blank(1000, 200)])
+    draw_tick_scale_bar(img, 100, 900, 60.0)
+    meta = OpenCvParser().parse(encode_png(img)).meta
+    assert meta.scale_source == "scale_bar"
+    assert meta.cm_per_px == pytest.approx(100 / 60, rel=0.02)
+
+
+def test_a_light_gray_scale_bar_is_found_too():
+    img = np.vstack([draw_two_room_plan(), blank(1000, 200)])
+    draw_tick_scale_bar(img, 100, 900, 60.0, ink=170)
+    assert OpenCvParser().parse(encode_png(img)).meta.scale_source == "scale_bar"
+
+
+def test_a4_pages_assume_1_to_100():
+    page = blank(1414, 2000)
+    page[600:1400, 200:1200] = draw_two_room_plan()
+    meta = OpenCvParser().parse(encode_png(page)).meta
+    assert meta.scale_source == "page_format"
+    assert meta.cm_per_px == pytest.approx(2970 / 2000)
 
 
 def test_origin_maps_plan_coordinates_back_onto_the_image():

@@ -19,7 +19,8 @@ from blueprint3d.parsing.openings import classify_gap, merge_collinear
 from blueprint3d.parsing.plan_builder import build_plan, mark_exterior, windows_facing_outside
 from blueprint3d.parsing.result import ParseMeta, ParseResult
 from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes
-from blueprint3d.parsing.scale import ScaleEstimate, estimate_scale
+from blueprint3d.parsing.scale import ScaleEstimate, estimate_scale, page_format_scale
+from blueprint3d.parsing.scale_bar import ScaleBar, detect_scale_bar
 from blueprint3d.parsing.segments import extract_axis_segments, extract_diagonal_walls
 from blueprint3d.parsing.walls import ThicknessStats, crop_box, expand_to_ink, extract_wall_mask, thickness_stats
 from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM, RoomKind
@@ -49,8 +50,10 @@ class _PlanArea:
     """Any ink including light gray lines, 255 = ink."""
     wall_mask: np.ndarray
     min_thickness: int
-    origin: tuple[int, int]
-    """Top-left of the plan area in the working image."""
+    box: tuple[int, int, int, int]
+    """Plan area (x0, y0, x1, y1) in the working image."""
+    page_inks: tuple[np.ndarray, ...]
+    """The whole page as dark ink and as any ink (light gray included), 255 = ink."""
 
 
 @dataclass(frozen=True)
@@ -74,7 +77,15 @@ class OpenCvParser:
 
         user_scale = cm_per_px / decoded.resize_factor if cm_per_px is not None else None
         doors = [o.width for w in axis_walls for o in w.openings if o.kind == "door"]
-        scale = estimate_scale(user_cm_per_px=user_scale, door_widths_px=doors, max_wall_thickness_px=stats.maximum)
+        bar = _best_scale_bar(area)
+        page_height, page_width = decoded.gray.shape
+        scale = estimate_scale(
+            user_cm_per_px=user_scale,
+            door_widths_px=doors,
+            max_wall_thickness_px=stats.maximum,
+            scale_bar_px_per_m=bar.px_per_step if bar else None,
+            page_cm_per_px=page_format_scale(page_width, page_height),
+        )
 
         regions = _find_rooms(area, runs, scale.cm_per_px)
         walls = [
@@ -99,7 +110,7 @@ class OpenCvParser:
             scale_detail=scale.detail,
             image_width=width,
             image_height=height,
-            origin_px=(area.origin[0] / decoded.resize_factor, area.origin[1] / decoded.resize_factor),
+            origin_px=(area.box[0] / decoded.resize_factor, area.box[1] / decoded.resize_factor),
             warnings=_warnings(scale, len(plan.rooms)),
         )
         return ParseResult(plan=plan, meta=meta)
@@ -113,8 +124,21 @@ def _locate_plan(gray: np.ndarray) -> _PlanArea:
     x0, y0, x1, y1 = expand_to_ink(crop_box(rough.mask, rough.min_thickness), binary, rough.mask)
     plan_binary = binary[y0:y1, x0:x1]
     walls = extract_wall_mask(plan_binary)
-    ink = np.where(gray[y0:y1, x0:x1] < LIGHT_INK_LEVEL, 255, 0).astype(np.uint8)
-    return _PlanArea(ink=ink, wall_mask=walls.mask, min_thickness=walls.min_thickness, origin=(x0, y0))
+    page_ink = np.where(gray < LIGHT_INK_LEVEL, 255, 0).astype(np.uint8)
+    return _PlanArea(
+        ink=page_ink[y0:y1, x0:x1],
+        wall_mask=walls.mask,
+        min_thickness=walls.min_thickness,
+        box=(x0, y0, x1, y1),
+        page_inks=(binary, page_ink),
+    )
+
+
+def _best_scale_bar(area: _PlanArea) -> ScaleBar | None:
+    """Scale bars may be drawn in light gray (lost by Otsu) or be scanned and noisy (cleaner with
+    Otsu), so search both inks and keep the longest regular run of marks."""
+    bars = [b for b in (detect_scale_bar(ink, exclude=area.box) for ink in area.page_inks) if b is not None]
+    return max(bars, key=lambda b: b.steps * b.px_per_step, default=None)
 
 
 def _run_to_wall(run: WallRun, binary: np.ndarray) -> PxWall | None:

@@ -88,6 +88,32 @@ def draw_bay_and_balcony_plan() -> np.ndarray:
     return img
 
 
+def draw_tick_scale_bar(
+    img: np.ndarray, x0: int, y: int, px_per_m: float, metres: int = 5, ink: int = 0
+) -> None:
+    """Line with a tick per metre, finer ticks in the first metre and digit labels above
+    (the style in drheymansgata5 / memoargatan)."""
+    color = (ink, ink, ink)
+    cv2.line(img, (x0, y), (round(x0 + metres * px_per_m), y), color, 1)
+    for m in range(metres + 1):
+        x = round(x0 + m * px_per_m)
+        cv2.line(img, (x, y), (x, y - 14), color, 1)
+        cv2.putText(img, str(m), (x - 6, y - 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, BLACK, 1)
+    for k in range(1, 10):
+        x = round(x0 + k * px_per_m / 10)
+        cv2.line(img, (x, y), (x, y - 5), color, 1)
+
+
+def draw_checker_scale_bar(img: np.ndarray, x0: int, y: int, px_per_m: float, metres: int = 10) -> None:
+    """A filled band with alternating white inserts per metre (the style in hallandsgatan5)."""
+    x1 = round(x0 + metres * px_per_m)
+    cv2.rectangle(img, (x0, y), (x1, y + 13), BLACK, -1)
+    for m in range(metres):
+        a, b = round(x0 + m * px_per_m) + 2, round(x0 + (m + 1) * px_per_m) - 2
+        top = y + 2 if m % 2 == 0 else y + 7
+        cv2.rectangle(img, (a, top), (b, top + 4), WHITE, -1)
+
+
 def encode_png(img: np.ndarray) -> bytes:
     ok, buf = cv2.imencode(".png", img)
     assert ok

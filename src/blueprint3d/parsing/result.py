@@ -1,7 +1,6 @@
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field
 
+from blueprint3d.parsing.scale import ScaleSource
 from blueprint3d.schema import Plan
 
 
@@ -10,7 +9,7 @@ class ParseMeta(BaseModel):
 
     parser: str
     cm_per_px: float = Field(gt=0, description="Centimetres per pixel of the uploaded image.")
-    scale_source: Literal["user", "doors", "wall_thickness"]
+    scale_source: ScaleSource
     scale_detail: str
     image_width: int
     image_height: int

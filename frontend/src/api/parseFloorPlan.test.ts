@@ -58,6 +58,11 @@ describe('parseFloorPlan', () => {
     expect((fetchMock.mock.calls[0][1].body as FormData).get('cm_per_px')).toBe('2')
   })
 
+  it.each(['scale_bar', 'page_format'])('accepts the %s scale source', async (source) => {
+    mockFetch(Response.json({ plan: sample, meta: { ...meta, scale_source: source, origin_px: [10, 20] } }))
+    expect((await parseFloorPlan(png())).meta.scale_source).toBe(source)
+  })
+
   it('rejects invalid files without calling the backend', async () => {
     const fetchMock = mockFetch(Response.json({}))
     await expect(parseFloorPlan(new File([], 'a.gif', { type: 'image/gif' }))).rejects.toThrow(/PNG, JPEG or WebP/)

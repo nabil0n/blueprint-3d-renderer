@@ -14,6 +14,7 @@ const meta: api.ParseMeta = {
   scale_detail: '',
   image_width: 10,
   image_height: 10,
+  origin_px: [0, 0],
   warnings: [],
 }
 const png = new File([new Uint8Array(4)], 'plan.png', { type: 'image/png' })

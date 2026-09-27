@@ -11,6 +11,8 @@ interface ImageSummaryProps {
 
 const SCALE_SOURCE_TEXT: Record<ParseMeta['scale_source'], string> = {
   user: 'set by you',
+  scale_bar: 'read from the scale bar',
+  page_format: 'assumed A4 at 1:100',
   doors: 'estimated from doors',
   wall_thickness: 'estimated from wall thickness',
 }

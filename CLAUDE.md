@@ -24,7 +24,14 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
   2. Walls are strokes wider than the first jump in the stroke-width histogram (`walls.py`). The plan is located with a rough mask first, then the threshold is recomputed inside the plan only, because page text skews it.
   3. Extract horizontal/vertical wall pieces (`segments.py`), plus a fallback for angled walls.
   4. Merge collinear pieces; the gaps between them are openings (`openings.py`). An opening is a window if it contains 2 or more *solid* lines along the wall, checked on light-gray ink, and faces outside space. Dashed lines mean an open passage.
-  5. Scale: user value, else median door gap assumed to be 80 cm, else exterior wall thickness (`scale.py`).
+  5. Scale (`scale.py`), in priority order:
+     - the user's value
+     - the printed scale bar (`scale_bar.py`): the smallest regularly repeating spacing of the tallest marks, taken as 1 m
+     - A4 proportions, assumed printed at 1:100
+     - median door gap, assumed to be 80 cm
+     - exterior wall thickness
+
+     The bar and page-format assumptions are dropped if the door estimate disagrees by more than 1.6x.
   6. Rooms (`rooms.py`): enclosed space from thick walls plus plugged openings, with a fallback pass over all ink for spaces bounded by thin lines (balconies, angled bay windows).
   7. Complete room outlines that no wall explains (`boundaries.py`). Probe outward from each uncovered stretch; probes stop at known walls.
      - **Outside behind 2+ parallel lines:** an exterior wall with a window. This covers angled walls.

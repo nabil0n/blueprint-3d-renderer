@@ -7,10 +7,12 @@ export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const metaSchema = z.object({
   parser: z.string(),
   cm_per_px: z.number().positive(),
-  scale_source: z.enum(['user', 'doors', 'wall_thickness']),
+  scale_source: z.enum(['user', 'scale_bar', 'page_format', 'doors', 'wall_thickness']),
   scale_detail: z.string(),
   image_width: z.number().int().positive(),
   image_height: z.number().int().positive(),
+  /** Where plan (0, 0) lies in the uploaded image: image px = origin_px + plan cm / cm_per_px. */
+  origin_px: z.tuple([z.number(), z.number()]).default([0, 0]),
   warnings: z.array(z.string()),
 })
 
