@@ -44,7 +44,10 @@ def extract_wall_mask(binary: np.ndarray) -> WallMask:
     if widths.size == 0:
         raise ParseError("No dark strokes found in the image.")
 
-    kernel_size = max(3, _wall_width_threshold(widths))
+    # Odd kernel: an even one has an off-centre anchor and shifts the mask by a pixel. Rounding
+    # down keeps walls exactly at the threshold; thin strokes sit well below it anyway.
+    threshold = max(3, _wall_width_threshold(widths))
+    kernel_size = threshold if threshold % 2 else threshold - 1
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
     mask = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
     if not mask.any():

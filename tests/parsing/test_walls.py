@@ -36,6 +36,17 @@ def test_thin_walls_count_when_thick_walls_dominate():
     assert walls.mask[100:300, 80:280].max() == 0
 
 
+def test_wall_mask_is_aligned_with_the_input():
+    """An even-sized opening kernel shifts the result by a pixel, which lets rooms leak past door plugs."""
+    img = blank(400, 300)
+    cv2.rectangle(img, (50, 50), (349, 57), BLACK, -1)  # 8 px wall
+    cv2.putText(img, "text", (60, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.0, BLACK, 1)
+    binary = to_binary(img)
+    walls = extract_wall_mask(binary)
+    assert walls.min_thickness % 2 == 1
+    assert np.array_equal(walls.mask[40:70, 40:360] > 0, binary[40:70, 40:360] > 0)
+
+
 def test_rejects_blank_image():
     with pytest.raises(ParseError, match="No dark strokes"):
         extract_wall_mask(np.zeros((100, 100), np.uint8))
