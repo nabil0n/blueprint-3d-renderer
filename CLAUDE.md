@@ -53,6 +53,7 @@ src/blueprint3d/   backend package (schema.py, api.py, parsing/)
 tests/             backend tests (pytest) + shared fixtures; tests/parsing/synthetic.py draws test plans
 frontend/          Vite + React + TypeScript app (api/, app/ hooks, geometry/, plan/, scene/, ui/)
 docker/            Dockerfiles (build context is the repo root)
+docs/              README figures, regenerated with `uv run python docs/make_figures.py` after parser changes
 compose.yaml       dev stack
 data/, samples/    real rental-site plans; each *.jpg/*.png gets a smoke test in test_opencv_parser.py
                    (samples/ is git-ignored; real plans may be copyrighted, so keep them out of git)
