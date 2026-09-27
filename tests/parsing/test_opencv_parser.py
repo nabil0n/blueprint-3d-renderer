@@ -106,7 +106,8 @@ def test_balcony_gets_half_height_railings(bay_result):
 
 
 def test_rooms_with_ordinary_walls_are_not_balconies(bay_result):
-    assert sorted(r.kind for r in bay_result.plan.rooms) == ["balcony", "other", "other"]
+    kinds = [r.kind for r in bay_result.plan.rooms]
+    assert len(kinds) == 3 and kinds.count("balcony") == 1
 
 
 @pytest.fixture(scope="module")
@@ -133,8 +134,8 @@ def outward_door_result():
 
 
 def test_a_door_leaf_drawn_outside_is_not_a_railing(outward_door_result):
-    plan = outward_door_result.plan
-    assert sorted(r.kind for r in plan.rooms) == ["balcony", "other", "other"]
+    kinds = [r.kind for r in outward_door_result.plan.rooms]
+    assert len(kinds) == 3 and kinds.count("balcony") == 1
 
 
 def test_a_double_line_balcony_outline_is_a_railing_not_glazing(outward_door_result):
@@ -200,3 +201,28 @@ def test_real_sample_produces_a_plausible_plan(path):
     assert any(o.kind == "door" for o in result.plan.openings)
     assert any(o.kind == "window" for o in result.plan.openings)
     assert 0.5 < result.meta.cm_per_px < 5
+
+
+def test_rooms_are_named_from_their_printed_labels(synthetic_result):
+    names = sorted((room.name, room.kind) for room in synthetic_result.plan.rooms)
+    assert names == [("Bedroom", "bedroom"), ("Living", "living_room")]
+
+
+def test_a_named_balcony_stays_a_balcony(bay_result):
+    balcony = next(room for room in bay_result.plan.rooms if room.kind == "balcony")
+    assert balcony.name == "Balcony"
+
+
+def test_room_names_are_optional():
+    result = OpenCvParser(read_text=None).parse(encode_png(draw_two_room_plan()))
+    assert [room.name for room in result.plan.rooms] == [None, None]
+
+
+def test_unreadable_text_leaves_rooms_unnamed_with_a_warning():
+    def broken_reader(_gray):
+        raise RuntimeError("model missing")
+
+    result = OpenCvParser(read_text=broken_reader).parse(encode_png(draw_two_room_plan()))
+    assert len(result.plan.rooms) == 2
+    assert all(room.name is None for room in result.plan.rooms)
+    assert any("Room names could not be read" in w for w in result.meta.warnings)

@@ -58,3 +58,12 @@ def test_build_plan_scales_to_cm():
 def test_build_plan_drops_openings_that_do_not_fit():
     plan = build_plan([wall(openings=(PxOpening(offset=195, width=40, kind="door"),))], rooms=(), cm_per_px=1.0)
     assert plan.openings == []
+
+
+def test_build_plan_names_rooms():
+    triangle = ((0.0, 0.0), (10.0, 0.0), (10.0, 10.0))
+    plan = build_plan(
+        [], rooms=(triangle, triangle), cm_per_px=1.0, room_kinds={0: "kitchen"}, room_names={0: "Kök"}
+    )
+    assert (plan.rooms[0].name, plan.rooms[0].kind) == ("Kök", "kitchen")
+    assert (plan.rooms[1].name, plan.rooms[1].kind) == (None, "other")

@@ -13,12 +13,14 @@ import numpy as np
 
 from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask
 from blueprint3d.parsing.errors import ParseError
-from blueprint3d.parsing.geometry import PxOpening, PxWall, WallRun
+from blueprint3d.parsing.geometry import PxOpening, PxPoint, PxWall, WallRun
 from blueprint3d.parsing.image_io import MAX_SIDE_PX, binarize, decode_image, line_ink
 from blueprint3d.parsing.merge import merge_parallel_walls
+from blueprint3d.parsing.ocr import TextReader, read_text
 from blueprint3d.parsing.openings import classify_gap, merge_collinear
 from blueprint3d.parsing.plan_builder import build_plan, mark_exterior, windows_facing_outside
 from blueprint3d.parsing.result import ParseMeta, ParseResult
+from blueprint3d.parsing.room_names import RoomLabel, label_rooms
 from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes, outside_space
 from blueprint3d.parsing.scale import ScaleEstimate, estimate_scale, page_format_scale
 from blueprint3d.parsing.scale_bar import ScaleBar, detect_scale_bar
@@ -57,6 +59,8 @@ MAX_WALL_FACE_GAP_CM = 45.0
 class _PlanArea:
     ink: np.ndarray
     """Any ink including light gray lines, 255 = ink."""
+    gray: np.ndarray
+    """The plan area of the working image, for reading its text."""
     wall_mask: np.ndarray
     min_thickness: int
     box: tuple[int, int, int, int]
@@ -69,6 +73,8 @@ class _PlanArea:
 class OpenCvParser:
     max_side: int = MAX_SIDE_PX
     name: str = "opencv"
+    read_text: TextReader | None = read_text
+    """OCR for room names; None skips naming."""
 
     def parse(self, data: bytes, cm_per_px: float | None = None) -> ParseResult:
         decoded = decode_image(data, self.max_side)
@@ -107,9 +113,15 @@ class OpenCvParser:
         )
         outside = outside_space(regions, completion.balconies)
         walls = [windows_facing_outside(mark_exterior(w, outside), outside) for w in found_walls]
-        kinds: dict[int, RoomKind] = dict.fromkeys(completion.balconies, "balcony")
+        labels, naming_warning = _label_rooms(self.read_text, area.gray, regions.polygons)
+        named = {i: label for i, label in enumerate(labels) if label is not None}
+        # A balcony by its railings stays one, whatever its label says.
+        kinds: dict[int, RoomKind] = {i: label.kind for i, label in named.items()}
+        kinds.update(dict.fromkeys(completion.balconies, "balcony"))
         merged = merge_parallel_walls([*walls, *completion.walls], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
-        plan = build_plan(merged, regions.polygons, scale.cm_per_px, kinds)
+        plan = build_plan(
+            merged, regions.polygons, scale.cm_per_px, kinds, {i: label.name for i, label in named.items()}
+        )
 
         width, height = decoded.original_size
         meta = ParseMeta(
@@ -120,7 +132,7 @@ class OpenCvParser:
             image_width=width,
             image_height=height,
             origin_px=(area.box[0] / decoded.resize_factor, area.box[1] / decoded.resize_factor),
-            warnings=_warnings(scale, len(plan.rooms)),
+            warnings=[*_warnings(scale, len(plan.rooms)), *naming_warning],
         )
         return ParseResult(plan=plan, meta=meta)
 
@@ -143,6 +155,7 @@ def _locate_plan(gray: np.ndarray) -> _PlanArea:
     walls = extract_wall_mask(plan_binary)
     return _PlanArea(
         ink=page_ink[y0:y1, x0:x1],
+        gray=gray[y0:y1, x0:x1],
         wall_mask=walls.mask,
         min_thickness=walls.min_thickness,
         box=(x0, y0, x1, y1),
@@ -203,6 +216,20 @@ def _boundary_config(stats: ThicknessStats, cm_per_px: float) -> BoundaryConfig:
         door_range=(MIN_DOOR_CM / cm_per_px, MAX_DOOR_CM / cm_per_px),
         probe_reach=PROBE_REACH_FACTOR * stats.maximum,
     )
+
+
+def _label_rooms(
+    reader: TextReader | None, gray: np.ndarray, polygons: tuple[tuple[PxPoint, ...], ...]
+) -> tuple[tuple[RoomLabel | None, ...], list[str]]:
+    """Room labels read off the plan area, plus a warning if reading failed. A plan without
+    names is still a plan, so OCR errors never fail the parse."""
+    if reader is None:
+        return (None,) * len(polygons), []
+    try:
+        boxes = reader(gray)
+    except Exception as error:  # noqa: BLE001 - any engine failure just means no names
+        return (None,) * len(polygons), [f"Room names could not be read ({error}); rooms are unnamed."]
+    return label_rooms(polygons, boxes), []
 
 
 def _warnings(scale: ScaleEstimate, room_count: int) -> list[str]:

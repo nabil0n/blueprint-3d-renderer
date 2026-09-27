@@ -38,7 +38,8 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
      - **Any other room, outside behind 2+ parallel lines:** an exterior wall with a window. This covers angled walls. A single line (e.g. a door leaf drawn outside) is left alone.
      - **Another room across thin lines:** a wall with a door along the chord.
   8. Merge parallel walls of the same height that overlap and lie within 45 cm of each other into one wall spanning both faces (`merge.py`). This handles outlined (double-line) walls and duplicates from step 7.
-  9. Convert to a cm `Plan` (`plan_builder.py`).
+  9. Name rooms (`ocr.py`, `room_names.py`): RapidOCR reads the plan area; text inside a room that matches the Swedish/English vocabulary sets its `name` and `kind` (fuzzy for words of 4+ letters, exact below, so cupboard markers like G/ST/KYL never match). Geometric balconies stay balconies. OCR failure only adds a warning. `OpenCvParser(read_text=None)` skips naming; tests inject fake readers.
+  10. Convert to a cm `Plan` (`plan_builder.py`).
 - **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). It is empty at the moment. Remove an entry once its style is supported.
 - **Evaluation harness** (`src/blueprint3d/evaluation/`): run `uv run python -m blueprint3d.evaluation` after every parser change.
   - It parses each image in `data/` and scores it against `data/truth.json`: scale error, room and balcony counts, and living-area error against the printed area. Living area follows the printed Swedish BOA definition (SS 21054): inside the exterior walls, interior walls included, balconies excluded.
@@ -74,6 +75,8 @@ uv run pytest                              # tests
 uv run pytest --cov=blueprint3d            # coverage (target 80%+)
 uv run uvicorn blueprint3d.api:app --reload  # backend on :8000, docs at /docs
 ```
+
+`opencv-python` (the GUI build, pulled in by rapidocr) is excluded via `[tool.uv] override-dependencies`: it clashes with `opencv-python-headless` (both install `cv2`) and needs libGL in Docker. If `cv2` ever goes missing after a sync, run `uv sync --reinstall-package opencv-python-headless`.
 
 ### Frontend (from `frontend/`)
 

@@ -5,9 +5,11 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.141.1",
     "numpy>=2.5.3",
+    "onnxruntime>=1.30.0",
     "opencv-python-headless>=5.0.0.93",
     "pydantic>=2.9",
     "python-multipart>=0.0.32",
+    "rapidocr>=3.9.2",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -27,3 +29,8 @@ packages = ["src/blueprint3d"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+# rapidocr depends on opencv-python, which clashes with our headless build (both install cv2, and
+# the GUI build needs libGL in the slim Docker image). Never install it; the headless cv2 serves both.
+override-dependencies = ["opencv-python; sys_platform == 'never'"]

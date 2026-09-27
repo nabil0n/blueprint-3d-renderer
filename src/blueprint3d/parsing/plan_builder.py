@@ -57,8 +57,10 @@ def build_plan(
     rooms: tuple[tuple[PxPoint, ...], ...],
     cm_per_px: float,
     room_kinds: Mapping[int, RoomKind] | None = None,
+    room_names: Mapping[int, str] | None = None,
 ) -> Plan:
-    """`room_kinds` maps room indices to kinds; unlisted rooms are "other"."""
+    """`room_kinds` and `room_names` map room indices to kinds and printed names; unlisted rooms
+    are "other" and unnamed."""
     def cm(value: float) -> float:
         return round(value * cm_per_px, DECIMALS)
 
@@ -83,9 +85,9 @@ def build_plan(
             if opening.offset - opening.width / 2 >= 0 and opening.offset + opening.width / 2 <= wall.length:
                 plan_openings.append(opening)
 
-    kinds = room_kinds or {}
+    kinds, names = room_kinds or {}, room_names or {}
     plan_rooms = [
-        Room(id=f"r{i + 1}", polygon=[point(p) for p in poly], kind=kinds.get(i, "other"))
+        Room(id=f"r{i + 1}", polygon=[point(p) for p in poly], kind=kinds.get(i, "other"), name=names.get(i))
         for i, poly in enumerate(rooms)
     ]
     return Plan(walls=plan_walls, openings=plan_openings, rooms=plan_rooms)

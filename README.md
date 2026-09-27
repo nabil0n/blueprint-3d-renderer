@@ -93,7 +93,7 @@ A rental floor plan is a surprisingly hostile image. Besides walls it has room n
 door swings, dimension marks, logos, coloured fills, scale bars and site maps. The parser's job is
 to decide, pixel by pixel and then shape by shape, what is architecture and what is decoration.
 
-It does this in nine steps, orchestrated by
+It does this in ten steps, orchestrated by
 [`parsing/opencv_parser.py`](src/blueprint3d/parsing/opencv_parser.py). Each step lives in its
 own small module. The figures below show every step on a synthetic example plan: two rooms, a
 cut-off corner with a window (a "bay"), a balcony, a coloured logo and a scale bar.
@@ -250,7 +250,28 @@ known walls, so a cupboard drawn against a wall is never mistaken for one.
 | Outside, behind a single line (e.g. a door leaf drawn outside) | Nothing |
 | Another room, across thin lines | A **wall with a door** along the chord |
 
-### 9. Tidying up and converting — [`merge.py`](src/blueprint3d/parsing/merge.py), [`plan_builder.py`](src/blueprint3d/parsing/plan_builder.py)
+### 9. Room names — [`ocr.py`](src/blueprint3d/parsing/ocr.py), [`room_names.py`](src/blueprint3d/parsing/room_names.py)
+
+Most plans print a name in each room: SOVRUM, KÖK, BAD, Hall. The plan area is read with
+[RapidOCR](https://github.com/RapidAI/RapidOCR) (PP-OCR models on ONNX Runtime, bundled with the
+package, so nothing is downloaded and there is no system dependency). Each line of text is
+matched against a small Swedish and English vocabulary and belongs to the room it sits in.
+
+- **Room kinds.** *Sovrum* and *kammare* make a bedroom, *wc/dusch* a bathroom, *tamb.* a
+  hallway, and so on. The kind sets the floor colour in 3D. A balcony found by its railings
+  stays a balcony.
+- **Misreadings.** Scans and hand lettering come back as *S0VFum* or *VACDAGSEUH*. Words of
+  four letters or more match the closest vocabulary word if they are at least 65% similar, and
+  then take its spelling. Shorter text must match exactly: the cupboard and appliance markers
+  (G, L, ST, KYL) are short too.
+- **Open plans.** A room printed with several names is named after all of them, main kind
+  first: *Vardagsrum / Kök / Entré* is a living room.
+- **Everything else** (street names, legends, *Obj.nr*) is ignored: it is not in the
+  vocabulary, and usually not inside a room either.
+
+If reading fails, the rooms stay unnamed and the response carries a warning.
+
+### 10. Tidying up and converting — [`merge.py`](src/blueprint3d/parsing/merge.py), [`plan_builder.py`](src/blueprint3d/parsing/plan_builder.py)
 
 - **Merging.** Some plans draw walls as *outlines*: two parallel lines. That produces two thin
   walls side by side. Parallel walls of the same height that overlap and lie within 45 cm merge
@@ -364,7 +385,8 @@ Contributor and AI-agent conventions are in [CLAUDE.md](CLAUDE.md).
 
 - **Hatched walls** (stippled fill between two lines) are found, but thin partitions and
   their doors are not closed, so neighbouring rooms merge.
-- **Room names aren't read**, so every room is "Room" with the same floor colour.
+- **Room names** are read only where the OCR can: upside-down or heavily stylised lettering
+  is missed (the KÖK on the hand-lettered plan), and a room without a printed name stays "Room".
 - **Curved walls** are approximated or missed.
 - **Scale assumptions:** a scale bar is assumed to be marked in whole metres, and an A4 page at
   1:100. Both are cross-checked, and the user can always enter the scale by hand.
@@ -372,8 +394,7 @@ Contributor and AI-agent conventions are in [CLAUDE.md](CLAUDE.md).
 **Next:**
 
 1. **Hatched and outlined walls:** close door gaps in thin partitions so rooms separate.
-2. **Room names by OCR** (e.g. SOVRUM, KÖK, BAD): room kinds, floor colours, and the printed
-   area as a second scale check.
+2. **Printed areas** next to room names (e.g. "76,9 m²") as a second scale check.
 3. **A learned parser:** a segmentation model trained on
    [CubiCasa5K](https://github.com/CubiCasa/CubiCasa5k), plus our own raster-to-vector step,
    compared against this baseline with the evaluation harness.
