@@ -76,3 +76,12 @@ def test_line_ink_keeps_gray_lines_that_touch_black_walls():
     ink = line_ink(gray, binarize(gray))
     assert ink[20:22, 10:90].all()
     assert ink[22:60, 50].all()
+
+
+def test_anti_aliased_edges_of_coloured_ink_are_removed_too():
+    img = np.full((60, 200, 3), 255, np.uint8)
+    cv2.putText(img, "LOGO", (10, 45), cv2.FONT_HERSHEY_DUPLEX, 1.5, (60, 110, 20), 4, cv2.LINE_AA)
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    gray = decode_image(buf.tobytes()).gray
+    assert gray.min() >= 230, "no halo pixels dark enough to count as ink"

@@ -56,7 +56,9 @@ def _to_gray(image: np.ndarray) -> np.ndarray:
         image = (image[:, :, :3].astype(np.float32) * alpha + 255 * (1 - alpha)).astype(np.uint8)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     chroma = image.max(axis=2).astype(np.int16) - image.min(axis=2)
-    return np.where(chroma > COLOUR_CHROMA, 255, gray).astype(np.uint8)
+    # Grow the mask by a pixel so the anti-aliased halo around coloured ink goes too.
+    coloured = cv2.dilate((chroma > COLOUR_CHROMA).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    return np.where(coloured, 255, gray).astype(np.uint8)
 
 
 def binarize(gray: np.ndarray) -> np.ndarray:
