@@ -21,6 +21,24 @@ def test_finds_enclosed_rooms_and_skips_small_regions():
     assert areas[0] > 150 * 250
 
 
+def test_cupboards_drawn_inside_a_room_become_part_of_its_floor():
+    barrier = np.zeros((400, 500), np.uint8)
+    cv2.rectangle(barrier, (50, 50), (449, 349), 255, 10)
+    for y in range(55, 175, 30):  # a row of 30 x 30 cupboards against the west wall
+        cv2.rectangle(barrier, (55, y), (85, y + 30), 255, 1)
+    cv2.rectangle(barrier, (55, 320), (400, 344), 255, 1)  # a 25 px counter strip along the south wall
+
+    [room] = find_rooms(barrier, min_area_px=2000, min_inradius_px=20).polygons
+
+    assert cv2.contourArea(np.array(room, np.float32)) > 0.97 * 390 * 290
+
+
+def test_absorbing_cupboards_does_not_merge_rooms():
+    barrier = two_room_barrier()
+    cv2.rectangle(barrier, (230, 60), (244, 200), 255, 1)  # cupboard against the dividing wall
+    assert len(find_rooms(barrier, min_area_px=2000, min_inradius_px=10).polygons) == 2
+
+
 def test_skips_regions_too_narrow_to_stand_in():
     barrier = np.zeros((300, 600), np.uint8)
     cv2.rectangle(barrier, (50, 50), (549, 80), 255, 5)  # long, 20 px wide corridor-like strip

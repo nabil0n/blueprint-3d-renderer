@@ -32,7 +32,7 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
      - exterior wall thickness
 
      The bar and page-format assumptions are dropped if the door estimate disagrees by more than 1.6x.
-  6. Rooms (`rooms.py`): enclosed space from thick walls plus plugged openings, with a fallback pass over all ink for spaces bounded by thin lines (balconies, angled bay windows).
+  6. Rooms (`rooms.py`): enclosed space from thick walls plus plugged openings, with a fallback pass over all ink for spaces bounded by thin lines (balconies, angled bay windows). Small pockets (cupboards, counter strips, door-swing wedges) are absorbed into the room they open onto across thin lines, so floors have no holes.
   7. Complete room outlines that no wall explains (`boundaries.py`). Probe outward from each uncovered stretch; probes stop at known walls.
      - **A room with 25% or more of its outline facing outside** (measured against its convex hull) is a `balcony`. All its outside stretches become railings (5 cm thick, half height), even when drawn as double lines.
      - **Any other room, outside behind 2+ parallel lines:** an exterior wall with a window. This covers angled walls. A single line (e.g. a door leaf drawn outside) is left alone.
