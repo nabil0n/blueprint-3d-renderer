@@ -13,28 +13,26 @@ import numpy as np
 
 from blueprint3d.parsing.boundaries import BoundaryConfig, complete_boundaries, covered_mask
 from blueprint3d.parsing.errors import ParseError
-from blueprint3d.parsing.geometry import PxOpening, PxPoint, PxWall, WallRun
-from blueprint3d.parsing.image_io import MAX_SIDE_PX, binarize, decode_image, line_ink
+from blueprint3d.parsing.geometry import PxOpening, PxWall, WallRun
+from blueprint3d.parsing.image_io import MAX_SIDE_PX, decode_image
 from blueprint3d.parsing.merge import merge_parallel_walls
 from blueprint3d.parsing.ocr import TextReader, read_text
 from blueprint3d.parsing.openings import classify_gap, merge_collinear
+from blueprint3d.parsing.pipeline import (
+    PlanArea,
+    best_scale_bar,
+    label_rooms_safely,
+    locate_plan,
+    room_kinds_and_names,
+    scale_warnings,
+)
 from blueprint3d.parsing.plan_builder import build_plan, mark_exterior, windows_facing_outside
 from blueprint3d.parsing.result import ParseMeta, ParseResult
-from blueprint3d.parsing.room_names import RoomLabel, label_rooms
 from blueprint3d.parsing.rooms import RoomRegions, find_rooms, gap_rects, merge_room_passes, outside_space
-from blueprint3d.parsing.scale import ScaleEstimate, estimate_scale, page_format_scale
-from blueprint3d.parsing.scale_bar import ScaleBar, detect_scale_bar
+from blueprint3d.parsing.scale import estimate_scale, page_format_scale
 from blueprint3d.parsing.segments import extract_axis_segments, extract_diagonal_walls
-from blueprint3d.parsing.walls import (
-    ThicknessStats,
-    crop_box,
-    expand_to_ink,
-    extract_wall_mask,
-    fill_hatching,
-    ink_box,
-    thickness_stats,
-)
-from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM, RoomKind
+from blueprint3d.parsing.walls import ThicknessStats, thickness_stats
+from blueprint3d.schema import DEFAULT_WALL_HEIGHT_CM
 
 MIN_RUN_FACTOR = 1.1
 MIN_RUN_EXTRA_PX = 2
@@ -50,23 +48,9 @@ MIN_BOUNDARY_PIECE_CM = 40.0
 MIN_DOOR_CM = 55.0
 MAX_DOOR_CM = 200.0
 PROBE_REACH_FACTOR = 3.0
+"""How far (in max wall thicknesses) to look beyond a room outline for what bounds it."""
 MAX_WALL_FACE_GAP_CM = 45.0
 """Parallel walls closer than this are taken as the two faces of one (outlined) wall."""
-"""How far (in max wall thicknesses) to look beyond a room outline for what bounds it."""
-
-
-@dataclass(frozen=True)
-class _PlanArea:
-    ink: np.ndarray
-    """Any ink including light gray lines, 255 = ink."""
-    gray: np.ndarray
-    """The plan area of the working image, for reading its text."""
-    wall_mask: np.ndarray
-    min_thickness: int
-    box: tuple[int, int, int, int]
-    """Plan area (x0, y0, x1, y1) in the working image."""
-    page_inks: tuple[np.ndarray, ...]
-    """The whole page as dark ink and as any ink (light gray included), 255 = ink."""
 
 
 @dataclass(frozen=True)
@@ -78,7 +62,7 @@ class OpenCvParser:
 
     def parse(self, data: bytes, cm_per_px: float | None = None) -> ParseResult:
         decoded = decode_image(data, self.max_side)
-        area = _locate_plan(decoded.gray)
+        area = locate_plan(decoded.gray)
         stats = thickness_stats(area.wall_mask)
 
         segments = extract_axis_segments(area.wall_mask, min_run=MIN_RUN_FACTOR * stats.maximum + MIN_RUN_EXTRA_PX)
@@ -92,7 +76,7 @@ class OpenCvParser:
 
         user_scale = cm_per_px / decoded.resize_factor if cm_per_px is not None else None
         doors = [o.width for w in axis_walls for o in w.openings if o.kind == "door"]
-        bar = _best_scale_bar(area)
+        bar = best_scale_bar(area)
         page_height, page_width = decoded.gray.shape
         scale = estimate_scale(
             user_cm_per_px=user_scale,
@@ -113,15 +97,10 @@ class OpenCvParser:
         )
         outside = outside_space(regions, completion.balconies)
         walls = [windows_facing_outside(mark_exterior(w, outside), outside) for w in found_walls]
-        labels, naming_warning = _label_rooms(self.read_text, area.gray, regions.polygons)
-        named = {i: label for i, label in enumerate(labels) if label is not None}
-        # A balcony by its railings stays one, whatever its label says.
-        kinds: dict[int, RoomKind] = {i: label.kind for i, label in named.items()}
-        kinds.update(dict.fromkeys(completion.balconies, "balcony"))
+        labels, naming_warning = label_rooms_safely(self.read_text, area.gray, regions.polygons)
+        kinds, names = room_kinds_and_names(labels, balconies=completion.balconies)
         merged = merge_parallel_walls([*walls, *completion.walls], max_gap=MAX_WALL_FACE_GAP_CM / scale.cm_per_px)
-        plan = build_plan(
-            merged, regions.polygons, scale.cm_per_px, kinds, {i: label.name for i, label in named.items()}
-        )
+        plan = build_plan(merged, regions.polygons, scale.cm_per_px, kinds, names)
 
         width, height = decoded.original_size
         meta = ParseMeta(
@@ -132,42 +111,9 @@ class OpenCvParser:
             image_width=width,
             image_height=height,
             origin_px=(area.box[0] / decoded.resize_factor, area.box[1] / decoded.resize_factor),
-            warnings=[*_warnings(scale, len(plan.rooms)), *naming_warning],
+            warnings=[*scale_warnings(scale, len(plan.rooms)), *naming_warning],
         )
         return ParseResult(plan=plan, meta=meta)
-
-
-def _locate_plan(gray: np.ndarray) -> _PlanArea:
-    """Find the plan with a rough wall mask, then re-derive walls from strokes inside it only:
-    page text (bold headings, legends) would otherwise skew the thin/thick split. Without solid
-    walls the plan is taken to be hatched: the largest drawing on the page, with its hatching
-    closed into solid walls."""
-    binary = binarize(gray)
-    rough = extract_wall_mask(binary, partitions=False)
-    page_ink = line_ink(gray, binary)
-    box = crop_box(rough.mask, rough.min_thickness)
-    if box is not None:
-        x0, y0, x1, y1 = expand_to_ink(box, page_ink, rough.mask)
-        plan_binary = binary[y0:y1, x0:x1]
-    else:
-        x0, y0, x1, y1 = ink_box(binary)
-        plan_binary = fill_hatching(binary[y0:y1, x0:x1])
-    walls = extract_wall_mask(plan_binary)
-    return _PlanArea(
-        ink=page_ink[y0:y1, x0:x1],
-        gray=gray[y0:y1, x0:x1],
-        wall_mask=walls.mask,
-        min_thickness=walls.min_thickness,
-        box=(x0, y0, x1, y1),
-        page_inks=(binary, page_ink),
-    )
-
-
-def _best_scale_bar(area: _PlanArea) -> ScaleBar | None:
-    """Scale bars may be drawn in light gray (lost by Otsu) or be scanned and noisy (cleaner with
-    Otsu), so search both inks and keep the longest regular run of marks."""
-    bars = [b for b in (detect_scale_bar(ink, exclude=area.box) for ink in area.page_inks) if b is not None]
-    return max(bars, key=lambda b: b.steps * b.px_per_step, default=None)
 
 
 def _run_to_wall(run: WallRun, binary: np.ndarray) -> PxWall | None:
@@ -189,7 +135,7 @@ def _run_to_wall(run: WallRun, binary: np.ndarray) -> PxWall | None:
     return PxWall(start=start, end=end, thickness=run.thickness, openings=openings)
 
 
-def _find_rooms(area: _PlanArea, runs: list[WallRun], cm_per_px: float) -> RoomRegions:
+def _find_rooms(area: PlanArea, runs: list[WallRun], cm_per_px: float) -> RoomRegions:
     def plugged(barrier: np.ndarray) -> np.ndarray:
         result = barrier.copy()
         for x0, y0, x1, y1 in gap_rects(runs, margin=GAP_PLUG_MARGIN_PX):
@@ -216,26 +162,3 @@ def _boundary_config(stats: ThicknessStats, cm_per_px: float) -> BoundaryConfig:
         door_range=(MIN_DOOR_CM / cm_per_px, MAX_DOOR_CM / cm_per_px),
         probe_reach=PROBE_REACH_FACTOR * stats.maximum,
     )
-
-
-def _label_rooms(
-    reader: TextReader | None, gray: np.ndarray, polygons: tuple[tuple[PxPoint, ...], ...]
-) -> tuple[tuple[RoomLabel | None, ...], list[str]]:
-    """Room labels read off the plan area, plus a warning if reading failed. A plan without
-    names is still a plan, so OCR errors never fail the parse."""
-    if reader is None:
-        return (None,) * len(polygons), []
-    try:
-        boxes = reader(gray)
-    except Exception as error:  # noqa: BLE001 - any engine failure just means no names
-        return (None,) * len(polygons), [f"Room names could not be read ({error}); rooms are unnamed."]
-    return label_rooms(polygons, boxes), []
-
-
-def _warnings(scale: ScaleEstimate, room_count: int) -> list[str]:
-    warnings = []
-    if scale.source != "user":
-        warnings.append(f"Scale is estimated. {scale.detail} Enter the real scale if sizes look off.")
-    if room_count == 0:
-        warnings.append("No enclosed rooms found; floors are missing.")
-    return warnings
