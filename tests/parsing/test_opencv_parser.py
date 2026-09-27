@@ -11,6 +11,7 @@ from tests.parsing.synthetic import (
     blank,
     draw_bay_and_balcony_plan,
     draw_decorated_plan,
+    draw_outward_door_and_double_railing_plan,
     draw_tick_scale_bar,
     draw_two_room_plan,
     encode_png,
@@ -125,6 +126,25 @@ def test_coloured_logos_are_not_walls(decorated_result):
 def test_flat_room_fills_do_not_hide_rooms(decorated_result):
     kinds = sorted(r.kind for r in decorated_result.plan.rooms)
     assert kinds == ["balcony", "other", "other"]
+
+
+@pytest.fixture(scope="module")
+def outward_door_result():
+    img = draw_outward_door_and_double_railing_plan()
+    return OpenCvParser().parse(encode_png(img), cm_per_px=TRUE_CM_PER_PX)
+
+
+def test_a_door_leaf_drawn_outside_is_not_a_railing(outward_door_result):
+    plan = outward_door_result.plan
+    assert sorted(r.kind for r in plan.rooms) == ["balcony", "other", "other"]
+
+
+def test_a_double_line_balcony_outline_is_a_railing_not_glazing(outward_door_result):
+    plan = outward_door_result.plan
+    railings = [w for w in plan.walls if w.height < 200]
+    assert len(railings) == 3
+    windows_on_low_walls = [o for o in plan.openings if o.wall_id in {w.id for w in railings}]
+    assert windows_on_low_walls == []
 
 
 def test_a_printed_scale_bar_sets_the_scale():

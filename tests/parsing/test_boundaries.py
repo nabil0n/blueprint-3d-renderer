@@ -34,18 +34,39 @@ def complete(ink, wall_mask, walls=()):
     return complete_boundaries(ink, covered, regions.contours, regions.outside, CONFIG)
 
 
-def test_single_thin_line_facing_outside_is_a_railing():
-    ink, wall_mask = box_with_open_east_side()
-    cv2.line(ink, (339, 100), (339, 299), 255, 1)
+def test_a_room_mostly_bounded_by_a_single_line_is_a_balcony():
+    """Thick wall only on the north side (the building); a thin railing on the other three."""
+    wall_mask = np.zeros((400, 500), np.uint8)
+    cv2.rectangle(wall_mask, (100, 100), (399, 119), 255, -1)
+    ink = wall_mask.copy()
+    cv2.rectangle(ink, (120, 119), (379, 260), 255, 1)
 
     result = complete(ink, wall_mask)
 
-    [railing] = result.walls
-    assert railing.height_cm == 125
-    assert railing.thickness == 4
-    assert railing.exterior
+    assert len(result.walls) == 3
+    assert all(w.height_cm == 125 and w.thickness == 4 and w.exterior for w in result.walls)
     assert result.balconies == frozenset({0})
-    assert abs(railing.start[0] - railing.end[0]) < 3, "runs along the east side"
+
+
+def test_a_double_line_railing_is_still_a_railing():
+    wall_mask = np.zeros((400, 500), np.uint8)
+    cv2.rectangle(wall_mask, (100, 100), (399, 119), 255, -1)
+    ink = wall_mask.copy()
+    for inset in (0, 5):
+        cv2.rectangle(ink, (120 + inset, 119), (379 - inset, 260 - inset), 255, 1)
+
+    result = complete(ink, wall_mask)
+
+    assert result.balconies == frozenset({0})
+    assert all(w.height_cm == 125 and not w.openings for w in result.walls)
+
+
+def test_a_single_thin_line_on_one_side_of_an_ordinary_room_is_left_alone():
+    ink, wall_mask = box_with_open_east_side()
+    cv2.line(ink, (339, 100), (339, 299), 255, 1)
+    result = complete(ink, wall_mask)
+    assert result.walls == ()
+    assert result.balconies == frozenset()
 
 
 def test_parallel_lines_facing_outside_are_a_window_wall():

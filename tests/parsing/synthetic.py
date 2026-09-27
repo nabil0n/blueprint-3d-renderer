@@ -100,6 +100,20 @@ def draw_decorated_plan() -> np.ndarray:
     return img
 
 
+def draw_outward_door_and_double_railing_plan() -> np.ndarray:
+    """The two-room plan with its entrance door swinging outwards (leaf and arc drawn outside the
+    building) and a balcony whose railing is drawn as a double line (rounded-corner style)."""
+    img = np.vstack([draw_two_room_plan(), blank(1000, 200)])
+    cv2.rectangle(img, (250, 680), (250 + DOOR_PX - 1, 699), WHITE, -1)  # clear the inward swing
+    cv2.rectangle(img, (170, 610), (320, 679), WHITE, -1)
+    cv2.line(img, (250, 700), (250, 700 + DOOR_PX), BLACK, 1)
+    cv2.ellipse(img, (250, 700), (DOOR_PX, DOOR_PX), 0, 0, 90, BLACK, 1)
+    cv2.rectangle(img, (600, 680), (656, 699), WHITE, -1)  # balcony door in the south wall
+    for inset in (0, 5):
+        cv2.rectangle(img, (560 + inset, 699), (860 - inset, 830 - inset), BLACK, 1)
+    return img
+
+
 def draw_tick_scale_bar(
     img: np.ndarray, x0: int, y: int, px_per_m: float, metres: int = 5, ink: int = 0
 ) -> None:

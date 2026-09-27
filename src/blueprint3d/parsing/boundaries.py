@@ -4,9 +4,11 @@ Thick-stroke detection misses walls drawn with thin lines: windows and doors in 
 balcony railings. Every stretch of a room outline that is not next to a known wall is explained by
 what lies beyond it:
 
-- outside, behind two or more parallel lines -> exterior wall with a window (glazing)
-- outside, behind a single line              -> balcony railing (thin, half height)
-- another room, across thin lines            -> wall with a door along the chord
+- another room, across thin lines           -> wall with a door along the chord
+- outside, in a room mostly bounded that way -> balcony: every such stretch is a railing
+                                                (thin, half height), even if drawn double
+- outside, elsewhere, behind 2+ parallel lines -> exterior wall with a window (glazing)
+- outside, elsewhere, behind a single line     -> left alone (e.g. a door leaf drawn outside)
 
 Probes stop at known walls, so furniture drawn against a wall is never mistaken for one.
 """
@@ -32,6 +34,9 @@ GLAZING_LINE_COVERAGE = 0.75
 MIN_GLAZING_LINES = 2
 MIN_GLAZED_SHARE = 0.3
 OPENING_MARGIN_PX = 1.0
+BALCONY_OUTSIDE_SHARE = 0.25
+"""A room is a balcony if at least this share of its outline faces outside across thin lines.
+Loggias (recessed, railing on one side) sit near 30 %; bay windows ~10 %, door leaves ~5 %."""
 
 
 @dataclass(frozen=True)
@@ -97,15 +102,20 @@ def complete_boundaries(
     doors: dict[frozenset[int], PxWall] = {}
 
     for index, contour in enumerate(contours):
-        for group in _neighbor_groups(index, contour, covered, labels, outside, config):
+        groups = _neighbor_groups(index, contour, covered, labels, outside, config)
+        facing_outside = [p for g in groups if g[0].neighbor == OUTSIDE for p in g]
+        # Hull perimeter: door leaves and scan staircases would inflate the raw outline's length.
+        perimeter = cv2.arcLength(cv2.convexHull(contour.reshape(-1, 1, 2)), True)
+        is_balcony = sum(p.length for p in facing_outside) >= BALCONY_OUTSIDE_SHARE * perimeter
+        make_wall = _railing if is_balcony else _window_wall
+        for wall in (make_wall(p, thick_ink, config) for p in facing_outside):
+            if wall is not None:
+                walls.append(wall)
+                if is_balcony:
+                    balconies.add(index)
+        for group in groups:
             neighbor = group[0].neighbor
-            if neighbor == OUTSIDE:
-                for wall in (_outside_wall(p, thick_ink, config) for p in group):
-                    if wall is not None:
-                        walls.append(wall)
-                        if wall.height_cm is not None:
-                            balconies.add(index)
-            elif neighbor is not None:
+            if neighbor is not None and neighbor != OUTSIDE:
                 door = _door_wall(group, config)
                 key = frozenset({index, neighbor})
                 if door is not None and (key not in doors or _length(door) > _length(doors[key])):
@@ -230,26 +240,32 @@ def _probe(
     return None
 
 
-def _outside_wall(piece: _Piece, thick_ink: np.ndarray, config: BoundaryConfig) -> PxWall | None:
+def _window_wall(piece: _Piece, thick_ink: np.ndarray, config: BoundaryConfig) -> PxWall | None:
+    """An exterior wall with a window where the stretch is glazed; None if it is not."""
     length = piece.length
     if length < config.min_piece:
         return None
-    counts = _glazing_line_counts(thick_ink, piece, config.wall_thickness)
-    glazed = [c >= MIN_GLAZING_LINES for c in counts]
-    if glazed and sum(glazed) / len(glazed) >= MIN_GLAZED_SHARE:
-        first = glazed.index(True)
-        last = len(glazed) - 1 - glazed[::-1].index(True)
-        u0 = max(OPENING_MARGIN_PX, first * GLAZING_CHUNK_PX)
-        u1 = min(length - OPENING_MARGIN_PX, (last + 1) * GLAZING_CHUNK_PX)
-        shift = piece.outward * config.wall_thickness / 2
-        window = PxOpening(offset=(u0 + u1) / 2, width=u1 - u0, kind="window")
-        return PxWall(
-            start=tuple(piece.start + shift),
-            end=tuple(piece.end + shift),
-            thickness=config.wall_thickness,
-            openings=(window,) if u1 > u0 else (),
-            exterior=True,
-        )
+    glazed = [c >= MIN_GLAZING_LINES for c in _glazing_line_counts(thick_ink, piece, config.wall_thickness)]
+    if not glazed or sum(glazed) / len(glazed) < MIN_GLAZED_SHARE:
+        return None
+    first = glazed.index(True)
+    last = len(glazed) - 1 - glazed[::-1].index(True)
+    u0 = max(OPENING_MARGIN_PX, first * GLAZING_CHUNK_PX)
+    u1 = min(length - OPENING_MARGIN_PX, (last + 1) * GLAZING_CHUNK_PX)
+    shift = piece.outward * config.wall_thickness / 2
+    window = PxOpening(offset=(u0 + u1) / 2, width=u1 - u0, kind="window")
+    return PxWall(
+        start=tuple(piece.start + shift),
+        end=tuple(piece.end + shift),
+        thickness=config.wall_thickness,
+        openings=(window,) if u1 > u0 else (),
+        exterior=True,
+    )
+
+
+def _railing(piece: _Piece, _thick_ink: np.ndarray, config: BoundaryConfig) -> PxWall | None:
+    if piece.length < config.min_piece:
+        return None
     shift = piece.outward * (config.railing_thickness / 2 + 1)
     return PxWall(
         start=tuple(piece.start + shift),

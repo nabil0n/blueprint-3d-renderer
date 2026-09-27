@@ -34,8 +34,8 @@ plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ fro
      The bar and page-format assumptions are dropped if the door estimate disagrees by more than 1.6x.
   6. Rooms (`rooms.py`): enclosed space from thick walls plus plugged openings, with a fallback pass over all ink for spaces bounded by thin lines (balconies, angled bay windows).
   7. Complete room outlines that no wall explains (`boundaries.py`). Probe outward from each uncovered stretch; probes stop at known walls.
-     - **Outside behind 2+ parallel lines:** an exterior wall with a window. This covers angled walls.
-     - **Outside behind 1 line:** a railing (5 cm thick, half height), and the room becomes a `balcony`.
+     - **A room with 25% or more of its outline facing outside** (measured against its convex hull) is a `balcony`. All its outside stretches become railings (5 cm thick, half height), even when drawn as double lines.
+     - **Any other room, outside behind 2+ parallel lines:** an exterior wall with a window. This covers angled walls. A single line (e.g. a door leaf drawn outside) is left alone.
      - **Another room across thin lines:** a wall with a door along the chord.
   8. Convert to a cm `Plan` (`plan_builder.py`).
 - **Unsupported drawing styles** are listed in `UNSUPPORTED_STYLES` in `tests/parsing/test_opencv_parser.py` (strict xfail). For example, scanned plans with hatched double-line walls. Remove the entry once a style is supported.
