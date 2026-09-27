@@ -9,6 +9,7 @@ Personal/portfolio project.
 plan image ──▶ backend (Python, FastAPI) ──▶ plan JSON ──▶ frontend (React Three Fiber) ──▶ 3D dollhouse
 ```
 
+- **Everything runs locally.** Image processing, OCR and any future model inference happen on this machine (or its Docker containers); plans are never sent to a cloud service, and nothing is downloaded at runtime. OCR models are the ones bundled in the rapidocr wheel, loaded by explicit path (`ocr.py`), which bypasses RapidOCR's downloader; `tests/parsing/test_ocr.py` checks this with network access blocked. A new dependency or parser (e.g. the vision-LLM idea on the roadmap) must keep to this.
 - **The plan schema is the contract** between parsers and the renderer. It exists twice and must stay in sync:
   - `src/blueprint3d/schema.py`: source of truth (pydantic, frozen models, cross-reference validation)
   - `frontend/src/plan/schema.ts`: zod mirror (structure and defaults only)
